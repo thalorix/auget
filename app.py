@@ -195,7 +195,7 @@ def login():
       <input type="password" name="password" placeholder="Password" required>
       <button type="submit">Accedi</button>
     </form>
-    <p style="text-align:center;margin-top:1rem">Demo: <strong>demo@demo.com</strong> / <strong>demo123</strong></p>
+    
     </div>"""
     return render_template_string(BASE_TEMPLATE, title="Login", content=content)
 
@@ -285,7 +285,7 @@ with app.app_context():
     if not User.query.filter_by(email="demo@demo.com").first():
         demo = User(email="demo@demo.com", subscription_tier="demo",
                     subscription_expires=datetime.utcnow() + timedelta(days=3650))
-        demo.set_password("demo123")
+        demo.set_password(os.environ.get("DEMO_PASSWORD", "Demo!2026"))
         db.session.add(demo)
         db.session.commit()
         print("Account demo creato: demo@demo.com / demo123")
