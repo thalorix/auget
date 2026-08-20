@@ -1,0 +1,8 @@
+flask
+flask-sqlalchemy
+flask-login
+werkzeug
+pypdf
+pdfplumber
+python-docx
+yfinance
