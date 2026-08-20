@@ -1,0 +1,36 @@
+AURELIA S.P.A. — RELAZIONE FINANZIARIA ANNUALE 2025
+Valori espressi in milioni di Euro
+
+=== CONTO ECONOMICO ===
+Ricavi: 2023 4.820, 2024 5.240, 2025 5.710
+Costo del venduto: 2023 2.650, 2024 2.860, 2025 3.080
+Margine operativo lordo (EBITDA): 1.500
+Spese SG&A: 2025 690
+Risultato operativo (EBIT): 2023 1.010, 2024 1.150, 2025 1.290
+Oneri finanziari (interessi passivi): 45
+Utile netto: 2023 720, 2024 830, 2025 940
+Ammortamenti: 210
+Spese ricerca e sviluppo (R&D): 85
+Aliquota fiscale effettiva: 24%
+
+=== STATO PATRIMONIALE ===
+Attività correnti: 2.900
+Rimanenze di magazzino: 480
+Crediti verso clienti: 860
+Cassa e equivalenti: 1.150
+Totale attivo: 8.400
+Passività correnti: 1.350
+Debito a lungo termine: 1.600
+Debito totale: 2.050
+Patrimonio netto: 4.300
+
+=== RENDICONTO FINANZIARIO ===
+Flusso di cassa operativo: 1.180
+Spese in conto capitale (CapEx): 260
+Free cash flow: 920
+
+=== DATI DI MERCATO ===
+Azioni in circolazione: 250 milioni
+Prezzo azione: 62,40 Euro
+Capitalizzazione di mercato: 15.600 milioni
+Dividendi distribuiti: 230

@@ -1,0 +1,46 @@
+{
+  "patterns": [
+    {
+      "key": "lt_debt",
+      "include": [
+        "long[- ]term debt",
+        "term debt"
+      ],
+      "exclude": [
+        "current portion"
+      ]
+    },
+    {
+      "key": "cet1",
+      "include": [
+        "cet ?1",
+        "common equity tier"
+      ],
+      "percent": true
+    },
+    {
+      "key": "cost_income",
+      "include": [
+        "cost/income",
+        "cost income ratio"
+      ],
+      "percent": true
+    },
+    {
+      "key": "one_off",
+      "include": [
+        "one-?off",
+        "una tantum",
+        "non ricorrent",
+        "non-recurring",
+        "componenti fiscali positive",
+        "plusvalenze",
+        "dta recognition"
+      ]
+    }
+  ],
+  "overrides": {
+    "eps": 4.9,
+    "prezzo": 52.0
+  }
+}

@@ -1,0 +1,53 @@
+BUFFETT ANALYZER — GUIDA ALL'USO
+
+1) AVVIO
+   • python test1.py                 → apre la GUI
+   • python test1.py bilancio.pdf    → apre la GUI e analizza subito il file
+
+2) FORMATI SUPPORTATI (riconosciuti dal contenuto, non solo dall'estensione)
+   • PDF testuale (pypdf)            • PDF scannerizzati (OCR, con pytesseract+pdf2image)
+   • DOCX / ODT                      • XLSX / ODS / CSV / TSV
+   • HTML / XML / XBRL               • TXT / MD / JSON
+   Dipendenze base: tkinter + pypdf. Le altre sono opzionali: se mancano, il programma lo dice con un messaggio chiaro.
+
+3) COME SI ANALIZZA UN REPORT
+   1. Premi "Carica Report (qualsiasi formato)" e scegli il file, oppure "Demo" per il sample integrato.
+   2. L'estrazione è 100% automatica: nessun dato va inserito a mano.
+   3. Leggi le schede:
+      - DASHBOARD: punteggio 0-100, verdetto, KPI principali, valore intrinseco DCF.
+      - CRITERI QUALITATIVI: 12 criteri con formula ("spia matematica") ed esito.
+      - CRITERI QUANTITATIVI: 40 metriche con valore, soglia Buffett e stato.
+      - DCF & VALUTAZIONE: ipotesi (r=10%, g=2,5%, n=10), flussi attualizzati, terminal value, MoS.
+      - LOG ESTRAZIONE: cosa è stato trovato, riga per riga, con stime e scarti motivati.
+      - DOCUMENTAZIONE: questa guida.
+   4. "Esporta HTML" salva una dashboard autonoma in outputs/ e può aprirla nel browser.
+
+4) ATTIVARE P/E E MARGINE DI SICUREZZA (prezzo di mercato)
+   I filing (10-K, annual report, bilanci) NON contengono il prezzo di borsa.
+   Per accendere P/E, P/B, Earnings Yield, EV/EBIT, EV/FCF e Margine di Sicurezza:
+   1. Crea un file di testo (es. prezzo.txt) con una riga del tipo:
+        Prezzo azione: 500        ← oppure il prezzo che leggi a borsa
+      e, facoltativo:  Capitalizzazione: 3700000   (in milioni)
+   2. Caricalo con "Carica Report": il motore combina prezzo + azioni + equity già estratti dal bilancio.
+   Regola prudenziale: se il prezzo produce un P/E < 4 (dato chiaramente non di mercato),
+   viene scartato e i multipli restano N/D piuttosto che mostrare falsi verdi.
+
+5) COME LEGGERE I RISULTATI
+   • ✔ OK = soglia Buffett superata · ◑ PARZIALE = fascia di attenzione ·
+     ✘ CRITICO = fuori soglia · … N/D = dato assente nel documento (onesto, non un errore).
+   • Il punteggio pesa 60% qualità + 40% numeri: Buffett compra prima il business, poi i numeri.
+   • Margine di sicurezza: ≥ 30% sconto adeguato · 20-30% borderline · <20% attendere · negativo = sopra il valore.
+   • "ECCELLENTE" con MoS N/D o negativo significa: grande azienda, prezzo da verificare a borsa.
+
+6) TRASPARENZA DEL MOTORE (cosa fa da solo)
+   • Tabelle PDF/DOCX/XLSX ricostruite in righe "label + valori"; unità (migliaia/milioni) rilevate dall'intestazione.
+   • Voci mancanti derivate quando possibile (EBITDA = EBIT+D&A; FCF = CFO−CapEx; debito = PFN+cassa; aziende debt-free da frasi tipo "no outstanding borrowings").
+   • Le stime sono dichiarate nel LOG con etichetta STIMATO (es. CapEx ≈ ammortamenti).
+   • Il testo letto è salvato in outputs/_ultimo_testo_estratto.txt per verifica umana.
+
+7) ESTENSIONI (OCR + PATTERN PERSONALIZZATI)
+   • OCR PDF scannerizzati: ./venv/bin/pip install pytesseract pdf2image e
+     sudo apt install tesseract-ocr tesseract-ocr-ita poppler-utils; il loader lo usa da solo (ita+eng).
+   • Pattern personalizzati: modifica patterns_custom.json (accanto a test1.py), es.
+     {"patterns": [{"key": "lt_debt", "include": ["mia dicitura"], "exclude": ["parola da scartare"]}]}
+     Il motore li aggiunge alle proprie keyword a ogni avvio, senza toccare il codice.

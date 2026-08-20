@@ -1,0 +1,14 @@
+venv/
+__pycache__/
+*.pyc
+*.bak
+*_copia*.py
+*_copia*.py
+prototipo1_fallito/
+outputs/
+uploads/
+instance/
+*.db
+*.sqlite3
+.env
+.DS_Store
