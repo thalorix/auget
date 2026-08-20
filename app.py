@@ -49,6 +49,7 @@ app.config["SECRET_KEY"] = "dev-key-change-in-production"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
 app.config["UPLOAD_FOLDER"] = os.path.join(BASE, "uploads")
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+os.makedirs(os.path.join(BASE, "outputs"), exist_ok=True)
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -176,6 +177,11 @@ def register():
     </div>"""
     return render_template_string(BASE_TEMPLATE, title="Registrazione", content=content)
 
+
+@app.route("/favicon.ico")
+def favicon():
+    return ("", 204)
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -277,7 +283,9 @@ def do_analyze():
         html_path = engine.export_html(res)
         return send_file(os.path.abspath(html_path), mimetype="text/html")
     except Exception as e:
-        flash(f"Errore: {str(e)}", "error")
+        import traceback
+        traceback.print_exc()
+        flash(f"Errore analisi: {str(e)}", "error")
         return redirect(url_for("analyze_page"))
 
 with app.app_context():
