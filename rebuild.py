@@ -1,4 +1,4 @@
-import os, sys
+CODE = r'''import os, sys
 from datetime import datetime, timedelta
 from flask import Flask, request, redirect, url_for, render_template_string, flash, send_file
 from flask_sqlalchemy import SQLAlchemy
@@ -620,3 +620,7 @@ if __name__ == "__main__":
     print("Buffett Analyzer WEB con login: http://127.0.0.1:5001")
     print("Account demo: demo@demo.com / demo123")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False, threaded=True)
+'''
+with open("app.py", "w", encoding="utf-8") as f:
+    f.write(CODE)
+print("OK: app.py ricostruito, byte:", len(CODE))
