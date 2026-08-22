@@ -46,7 +46,10 @@ import test1 as engine
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "dev-key-change-in-production"
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
+_dbu = os.environ.get("DATABASE_URL", "sqlite:///users.db")
+if _dbu.startswith("postgres://"):
+    _dbu = _dbu.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = _dbu
 app.config["UPLOAD_FOLDER"] = os.path.join(BASE, "uploads")
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(os.path.join(BASE, "outputs"), exist_ok=True)
@@ -55,12 +58,41 @@ db = SQLAlchemy(app)
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
+def send_email(to, subject, body):
+    key = os.environ.get("RESEND_API_KEY")
+    if not key:
+        print(f"[email-sim] -> {to}: {subject}")
+        return
+    try:
+        import requests as _rq
+        _rq.post("https://api.resend.com/emails",
+                 headers={"Authorization": "Bearer " + key},
+                 json={"from": "Buffett Analyzer <noreply@sibilla.cc>",
+                       "to": [to], "subject": subject, "html": body}, timeout=10)
+    except Exception as e:
+        print("[email-err]", e)
+
+STRIPE_KEY = os.environ.get("STRIPE_SECRET_KEY")
+stripe = None
+if STRIPE_KEY:
+    try:
+        import stripe as _st
+        _st.api_key = STRIPE_KEY
+        stripe = _st
+    except Exception:
+        stripe = None
+STRIPE_PRICES = {"basic": os.environ.get("STRIPE_PRICE_BASIC"),
+                 "pro": os.environ.get("STRIPE_PRICE_PRO"),
+                 "enterprise": os.environ.get("STRIPE_PRICE_ENTERPRISE")}
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
     subscription_tier = db.Column(db.String(20), default="none")
     subscription_expires = db.Column(db.DateTime)
+    stripe_customer_id = db.Column(db.String(120))
+    stripe_subscription_id = db.Column(db.String(120))
     
     def set_password(self, pw):
         self.password_hash = generate_password_hash(pw)
@@ -97,6 +129,15 @@ class CollabRequest(db.Model):
     email = db.Column(db.String(120))
     kind = db.Column(db.String(120))
     message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Report(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    filename = db.Column(db.String(200))
+    company = db.Column(db.String(120))
+    score = db.Column(db.Float)
+    html = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 @login_manager.user_loader
@@ -140,7 +181,7 @@ button:hover{background:#ffc94d}
   <div>
     <a href="/">Home</a><a href="/contatti">Contatti</a><a href="/collabora">Collabora</a>
     {% if current_user.is_authenticated %}
-      <a href="/analyze">Analizza</a><a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
+      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
       <span style="color:#9aa4b2">{{ current_user.email }}</span>
       <a href="/logout">Esci</a>
     {% else %}
@@ -205,6 +246,7 @@ def register():
         db.session.commit()
         login_user(user)
         flash("Registrazione completata! Hai 7 giorni di prova gratuita.", "success")
+        send_email(email, "Benvenuto in Buffett Analyzer", "<p>Il tuo account e pronto: 7 giorni di prova gratuita.</p>")
         return redirect(url_for("pricing"))
     content = """<div class="card">
     <h1>Registrati</h1>
@@ -288,10 +330,23 @@ def checkout(tier):
     if tier not in prices:
         flash("Piano non valido", "error")
         return redirect(url_for("pricing"))
+    if stripe and STRIPE_PRICES.get(tier):
+        sess = stripe.checkout.Session.create(
+            mode="subscription",
+            client_reference_id=str(current_user.id),
+            customer_email=current_user.email,
+            line_items=[{"price": STRIPE_PRICES[tier], "quantity": 1}],
+            subscription_data={"metadata": {"uid": str(current_user.id), "tier": tier}},
+            metadata={"uid": str(current_user.id), "tier": tier},
+            success_url=request.host_url + "analyze?pay=ok",
+            cancel_url=request.host_url + "pricing")
+        return redirect(sess.url)
     current_user.subscription_tier = tier
     current_user.subscription_expires = datetime.utcnow() + timedelta(days=30)
     db.session.commit()
     flash(f"Pagamento completato! Piano {tier} attivato per 30 giorni.", "success")
+    send_email(current_user.email, "Ricevuta abbonamento",
+               f"<p>Piano {tier} attivo fino al {current_user.subscription_expires:%d/%m/%Y}.</p>")
     return redirect(url_for("analyze_page"))
 
 @app.route("/analyze")
@@ -321,7 +376,12 @@ def do_analyze():
     try:
         res = engine.analyze_document(path)
         html_path = engine.export_html(res)
-        return send_file(os.path.abspath(html_path), mimetype="text/html")
+        html = open(html_path, encoding="utf-8").read()
+        rep = Report(user_id=current_user.id, filename=f.filename,
+                     company=res.get("company", ""),
+                     score=res.get("scores", {}).get("total"), html=html)
+        db.session.add(rep); db.session.commit()
+        return redirect(f"/reports/{rep.id}")
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -395,6 +455,67 @@ def feedback():
       <button type="submit" style="margin-top:1rem">Invia feedback</button>
     </form></div>"""
     return render_template_string(BASE_TEMPLATE, title="Feedback", content=content)
+
+@app.route("/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    if not stripe:
+        return ("stripe non configurato", 400)
+    sig = request.headers.get("Stripe-Signature")
+    try:
+        ev = stripe.Webhook.construct_event(request.data, sig, os.environ.get("STRIPE_WEBHOOK_SECRET"))
+    except Exception:
+        return ("firma non valida", 400)
+    t = ev["type"]; obj = ev["data"]["object"]
+    if t == "checkout.session.completed":
+        uid = obj.get("client_reference_id") or (obj.get("metadata") or {}).get("uid")
+        u = db.session.get(User, int(uid)) if uid else None
+        if u:
+            u.subscription_tier = (obj.get("metadata") or {}).get("tier", "pro")
+            u.stripe_customer_id = obj.get("customer")
+            try:
+                sub = stripe.Subscription.retrieve(obj["subscription"])
+                u.stripe_subscription_id = sub["id"]
+                u.subscription_expires = datetime.utcfromtimestamp(sub["current_period_end"])
+            except Exception:
+                u.subscription_expires = datetime.utcnow() + timedelta(days=30)
+            db.session.commit()
+            send_email(u.email, "Abbonamento attivato", f"<p>Benvenuto! Piano {u.subscription_tier} attivo.</p>")
+    elif t == "customer.subscription.deleted":
+        uid = (obj.get("metadata") or {}).get("uid")
+        u = db.session.get(User, int(uid)) if uid else None
+        if u:
+            u.subscription_tier = "none"; db.session.commit()
+            send_email(u.email, "Abbonamento terminato", "<p>Il tuo abbonamento e terminato. Rinnova quando vuoi.</p>")
+    elif t == "invoice.payment_failed":
+        u = User.query.filter_by(email=obj.get("customer_email")).first()
+        if u:
+            send_email(u.email, "Pagamento non riuscito", "<p>Aggiorna il metodo di pagamento dal portale.</p>")
+    return ("ok", 200)
+
+@app.route("/account/portal")
+@login_required
+def portal():
+    if not stripe or not current_user.stripe_customer_id:
+        flash("Nessun abbonamento Stripe attivo", "error")
+        return redirect(url_for("pricing"))
+    sess = stripe.billing_portal.Session.create(customer=current_user.stripe_customer_id, return_url=request.host_url)
+    return redirect(sess.url)
+
+@app.route("/reports")
+@login_required
+def reports():
+    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
+    rows = "".join(f"<div class='card'><h2>{r.company or r.filename}</h2><p>Score: {r.score} - {r.created_at.strftime('%d/%m/%Y %H:%M')}</p><a href='/reports/{r.id}' style='color:#f0b429'>Apri report</a></div>" for r in rs)
+    content = "<h1>I tuoi report</h1>" + (rows or "<p>Nessun report salvato.</p>")
+    return render_template_string(BASE_TEMPLATE, title="Report", content=content)
+
+@app.route("/reports/<int:rid>")
+@login_required
+def report_view(rid):
+    r = Report.query.get_or_404(rid)
+    if r.user_id != current_user.id and current_user.subscription_tier != "demo":
+        return ("non autorizzato", 403)
+    return (r.html, 200, {"Content-Type": "text/html; charset=utf-8"})
 
 with app.app_context():
     db.create_all()
