@@ -328,6 +328,74 @@ def do_analyze():
         flash(f"Errore analisi: {str(e)}", "error")
         return redirect(url_for("analyze_page"))
 
+@app.route("/contatti")
+def contatti():
+    content = """<div class="card"><h1>Contatti</h1>
+    <p><strong>Email:</strong> info@sibilla.cc</p>
+    <p><strong>Telegram:</strong> @sibilla_finance</p>
+    <p><strong>LinkedIn:</strong> linkedin.com/in/matteo-zanoni</p>
+    <p>Risposta entro 24-48 ore.</p></div>"""
+    return render_template_string(BASE_TEMPLATE, title="Contatti", content=content)
+
+@app.route("/collabora", methods=["GET", "POST"])
+def collabora():
+    if request.method == "POST":
+        c = CollabRequest(name=request.form.get("name"), email=request.form.get("email"),
+                          kind=request.form.get("kind"), message=request.form.get("message"))
+        db.session.add(c); db.session.commit()
+        flash("Proposta inviata! Ti risponderemo presto.", "success")
+        return redirect("/collabora")
+    content = """<div class="card"><h1>Collabora con noi</h1>
+    <p>Partnership, consulenza, sviluppo o ricerca: racconta la tua proposta.</p>
+    <form method="post">
+      <input name="name" placeholder="Nome e cognome" required>
+      <input type="email" name="email" placeholder="Email" required>
+      <input name="kind" placeholder="Tipo di collaborazione">
+      <textarea name="message" rows="5" placeholder="La tua proposta" required style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6e6e6;padding:10px;box-sizing:border-box"></textarea>
+      <button type="submit" style="margin-top:1rem">Invia proposta</button>
+    </form></div>"""
+    return render_template_string(BASE_TEMPLATE, title="Collabora", content=content)
+
+@app.route("/assistenza", methods=["GET", "POST"])
+@login_required
+def assistenza():
+    if request.method == "POST":
+        t = Ticket(user_id=current_user.id, subject=request.form.get("subject"), message=request.form.get("message"))
+        db.session.add(t); db.session.commit()
+        flash("Ticket aperto! Ti risponderemo via email.", "success")
+        return redirect("/assistenza")
+    tickets = Ticket.query.filter_by(user_id=current_user.id).order_by(Ticket.created_at.desc()).all()
+    rows = "".join(f"<div class='card'><h2>{t.subject}</h2><p>{t.message}</p><p style='color:#9aa4b2'>Stato: {t.status} - {t.created_at.strftime('%d/%m/%Y')}</p></div>" for t in tickets)
+    content = """<div class="card"><h1>Assistenza</h1>
+    <p>Apri un ticket: ti risponderemo via email.</p>
+    <form method="post">
+      <input name="subject" placeholder="Oggetto" required>
+      <textarea name="message" rows="5" placeholder="Descrivi il problema" required style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6e6e6;padding:10px;box-sizing:border-box"></textarea>
+      <button type="submit" style="margin-top:1rem">Apri ticket</button>
+    </form></div>
+    <h2>I tuoi ticket</h2>""" + (rows or "<p>Nessun ticket.</p>")
+    return render_template_string(BASE_TEMPLATE, title="Assistenza", content=content)
+
+@app.route("/feedback", methods=["GET", "POST"])
+@login_required
+def feedback():
+    if request.method == "POST":
+        fb = Feedback(user_id=current_user.id, rating=int(request.form.get("rating", 5)), message=request.form.get("message"))
+        db.session.add(fb); db.session.commit()
+        flash("Grazie per il tuo feedback!", "success")
+        return redirect("/feedback")
+    content = """<div class="card"><h1>Feedback</h1>
+    <p>Il tuo parere ci aiuta a migliorare.</p>
+    <form method="post">
+      <select name="rating" style="width:100%;padding:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6e6e6;margin:8px 0">
+        <option value="5">5 - Eccellente</option><option value="4">4 - Ottimo</option>
+        <option value="3">3 - Buono</option><option value="2">2 - Discreto</option><option value="1">1 - Da migliorare</option>
+      </select>
+      <textarea name="message" rows="5" placeholder="Cosa ne pensi? Cosa miglioreresti?" required style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6e6e6;padding:10px;box-sizing:border-box"></textarea>
+      <button type="submit" style="margin-top:1rem">Invia feedback</button>
+    </form></div>"""
+    return render_template_string(BASE_TEMPLATE, title="Feedback", content=content)
+
 with app.app_context():
     db.create_all()
     if not User.query.filter_by(email="demo@demo.com").first():
