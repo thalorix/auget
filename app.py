@@ -76,6 +76,29 @@ class User(UserMixin, db.Model):
             return False
         return datetime.utcnow() < self.subscription_expires
 
+class Ticket(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    subject = db.Column(db.String(200))
+    message = db.Column(db.Text)
+    status = db.Column(db.String(20), default="aperto")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class Feedback(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    rating = db.Column(db.Integer)
+    message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class CollabRequest(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120))
+    email = db.Column(db.String(120))
+    kind = db.Column(db.String(120))
+    message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
@@ -115,14 +138,13 @@ button:hover{background:#ffc94d}
 <div class="nav">
   <div><strong style="color:#f0b429">Buffett Analyzer</strong></div>
   <div>
+    <a href="/">Home</a><a href="/contatti">Contatti</a><a href="/collabora">Collabora</a>
     {% if current_user.is_authenticated %}
-      <span>{{ current_user.email }} ({{ current_user.subscription_tier }})</span>
-      <a href="/analyze">Analizza</a>
-      <a href="/pricing">Piani</a>
+      <a href="/analyze">Analizza</a><a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
+      <span style="color:#9aa4b2">{{ current_user.email }}</span>
       <a href="/logout">Esci</a>
     {% else %}
-      <a href="/login">Accedi</a>
-      <a href="/register">Registrati</a>
+      <a href="/login">Accedi</a><a href="/register">Registrati</a>
     {% endif %}
   </div>
 </div>
@@ -140,15 +162,33 @@ button:hover{background:#ffc94d}
 
 @app.route("/")
 def index():
-    content = """<div class="card">
-    <h1>&#9878; Buffett Analyzer</h1>
-    <p>Analizza bilanci aziendali con i criteri di Warren Buffett.</p>
-    <p>Supporto completo per banche e aziende con buyback massicci.</p>
-    {% if not current_user.is_authenticated %}
-    <p><a href="/register" style="color:#f0b429">Registrati</a> per iniziare.</p>
-    {% endif %}
-    </div>"""
-    return render_template_string(BASE_TEMPLATE, title="Home", content=content)
+    content = """
+    <div class="card" style="text-align:center">
+      <h1 style="font-size:2.4rem">Analisi fondamentale automatica,<br>in stile Warren Buffett</h1>
+      <p>Carica un bilancio (PDF, DOCX, TXT) e ottieni in pochi secondi una dashboard completa: punteggio 0-100, criteri quantitativi e qualitativi, valutazione DCF e metriche bancarie.</p>
+      <p><a href="/register"><button style="width:auto;margin:0 6px">Inizia gratis</button></a>
+      <a href="/login"><button style="width:auto;margin:0 6px;background:#30363d;color:#e6e6e6">Accedi</button></a></p>
+    </div>
+    <div class="card"><h2>Cosa fa</h2>
+    <ul style="line-height:1.9">
+      <li><strong>Punteggio Buffett 0-100</strong> con rubrica ponderata su 4 aree</li>
+      <li><strong>40 criteri quantitativi</strong> per aziende industriali e tech</li>
+      <li><strong>20 criteri bancari</strong> (ROE/RoTE, ROA, CET1, NPL, Cost/Income)</li>
+      <li><strong>Gestione buyback</strong>: ROE/ROIC normalizzati per le Big Tech</li>
+      <li><strong>Valutazione DCF multi-scenario</strong> con margine di sicurezza</li>
+      <li><strong>Prezzo di borsa</strong> automatico (yfinance) o manuale</li>
+    </ul></div>
+    <div class="card"><h2>Come funziona</h2>
+    <ol style="line-height:1.9">
+      <li>Ti registri e scegli un piano (7 giorni di prova gratuita)</li>
+      <li>Carichi il bilancio annuale o la relazione finanziaria</li>
+      <li>Ricevi la dashboard completa e il report HTML esportabile</li>
+    </ol></div>
+    <div class="card"><h2>Chi sono</h2>
+    <p>Sono Matteo Zanoni, sviluppatore e appassionato di value investing. Ho creato Buffett Analyzer per rendere l'analisi fondamentale professionale accessibile a tutti: investitori privati, studenti e professionisti che vogliono valutare aziende e banche con il metodo di Warren Buffett, senza fogli di calcolo manuali.</p>
+    <p>Vuoi collaborare o hai una proposta? <a href="/collabora" style="color:#f0b429">Parliamone</a> &middot; <a href="/contatti" style="color:#f0b429">Contatti</a></p></div>
+    """
+    return render_template_string(BASE_TEMPLATE, title="Buffett Analyzer", content=content)
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
