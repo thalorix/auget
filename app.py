@@ -5,6 +5,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
+import json as _json
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
@@ -85,6 +86,12 @@ STRIPE_PRICES = {"basic": os.environ.get("STRIPE_PRICE_BASIC"),
                  "pro": os.environ.get("STRIPE_PRICE_PRO"),
                  "enterprise": os.environ.get("STRIPE_PRICE_ENTERPRISE")}
 
+PLAN_LIMITS = {"basic": 10, "trial": 3, "pro": None, "enterprise": None, "demo": None}
+
+def _used_this_month(uid):
+    start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return Report.query.filter(Report.user_id == uid, Report.created_at >= start).count()
+
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -93,6 +100,14 @@ class User(UserMixin, db.Model):
     subscription_expires = db.Column(db.DateTime)
     stripe_customer_id = db.Column(db.String(120))
     stripe_subscription_id = db.Column(db.String(120))
+
+class WatchItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    ticker = db.Column(db.String(20))
+    name = db.Column(db.String(120))
+    note = db.Column(db.String(300))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def set_password(self, pw):
         self.password_hash = generate_password_hash(pw)
@@ -138,6 +153,7 @@ class Report(db.Model):
     company = db.Column(db.String(120))
     score = db.Column(db.Float)
     html = db.Column(db.Text)
+    metrics_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 @login_manager.user_loader
@@ -181,7 +197,7 @@ button:hover{background:#ffc94d}
   <div>
     <a href="/">Home</a><a href="/contatti">Contatti</a><a href="/collabora">Collabora</a>
     {% if current_user.is_authenticated %}
-      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
+      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a><a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
       <span style="color:#9aa4b2">{{ current_user.email }}</span>
       <a href="/logout">Esci</a>
     {% else %}
@@ -353,9 +369,12 @@ def checkout(tier):
 @login_required
 @subscription_required
 def analyze_page():
+    lim = PLAN_LIMITS.get(current_user.subscription_tier)
+    used = _used_this_month(current_user.id)
+    counter = f"<p style='color:#9aa4b2'>Analisi questo mese: {used}" + (f" / {lim}" if lim else " (illimitate)") + "</p>"
     content = """<div class="card">
     <h1>Analizza Bilancio</h1>
-    <p>Carica un bilancio aziendale (PDF, DOCX, TXT, HTML).</p>
+    <p>Carica un bilancio aziendale (PDF, DOCX, TXT, HTML).</p>""" + counter + """
     <form method="post" enctype="multipart/form-data" action="/do_analyze">
       <input type="file" name="report" accept=".pdf,.docx,.txt,.html,.htm" required>
       <button type="submit" style="margin-top:1rem">Analizza</button>
@@ -373,13 +392,22 @@ def do_analyze():
         return redirect(url_for("analyze_page"))
     path = os.path.join(app.config["UPLOAD_FOLDER"], f.filename)
     f.save(path)
+    lim = PLAN_LIMITS.get(current_user.subscription_tier)
+    if lim is not None and _used_this_month(current_user.id) >= lim:
+        flash(f"Limite piano raggiunto ({lim}/mese). Passa a Pro per analisi illimitate.", "error")
+        return redirect(url_for("pricing"))
     try:
         res = engine.analyze_document(path)
         html_path = engine.export_html(res)
         html = open(html_path, encoding="utf-8").read()
+        sel = {"score": res.get("scores", {}).get("total")}
+        for m in res.get("quant", []):
+            if m.code in ("Q08", "Q09", "Q16", "Q32", "Q34", "B1", "B2", "B4", "B5"):
+                sel[m.code] = m.value
         rep = Report(user_id=current_user.id, filename=f.filename,
                      company=res.get("company", ""),
-                     score=res.get("scores", {}).get("total"), html=html)
+                     score=sel["score"], html=html,
+                     metrics_json=_json.dumps(sel))
         db.session.add(rep); db.session.commit()
         return redirect(f"/reports/{rep.id}")
     except Exception as e:
@@ -517,6 +545,74 @@ def report_view(rid):
         return ("non autorizzato", 403)
     return (r.html, 200, {"Content-Type": "text/html; charset=utf-8"})
 
+@app.route("/watchlist", methods=["GET", "POST"])
+@login_required
+def watchlist():
+    if request.method == "POST":
+        w = WatchItem(user_id=current_user.id, ticker=request.form.get("ticker", "").upper(),
+                      name=request.form.get("name"), note=request.form.get("note"))
+        db.session.add(w); db.session.commit()
+        flash("Aggiunto alla watchlist!", "success")
+        return redirect("/watchlist")
+    items = WatchItem.query.filter_by(user_id=current_user.id).order_by(WatchItem.created_at.desc()).all()
+    rows = "".join(f"<div class='card'><h2>{w.ticker} - {w.name}</h2><p>{w.note or ''}</p><form method='post' action='/watchlist/{w.id}/delete'><button style='width:auto;background:#da3633;color:white'>Rimuovi</button></form></div>" for w in items)
+    content = """<div class="card"><h1>Watchlist</h1>
+    <p>Le aziende che segui.</p>
+    <form method="post">
+      <input name="ticker" placeholder="Ticker (es. MSFT)" required>
+      <input name="name" placeholder="Nome azienda" required>
+      <input name="note" placeholder="Nota (es. comprare sotto $400)">
+      <button type="submit" style="margin-top:1rem">Aggiungi</button>
+    </form></div>
+    <h2>Le tue aziende</h2>""" + (rows or "<p>Watchlist vuota.</p>")
+    return render_template_string(BASE_TEMPLATE, title="Watchlist", content=content)
+
+@app.route("/watchlist/<int:wid>/delete", methods=["POST"])
+@login_required
+def watchlist_delete(wid):
+    w = WatchItem.query.get_or_404(wid)
+    if w.user_id == current_user.id:
+        db.session.delete(w); db.session.commit()
+    return redirect("/watchlist")
+
+def _fmtv(x):
+    try:
+        return f"{float(x):.1f}" if x is not None else "N/D"
+    except Exception:
+        return "N/D"
+
+def _get_metric(r, k):
+    if k == "score":
+        return r.score
+    try:
+        return (_json.loads(r.metrics_json or "{}")).get(k)
+    except Exception:
+        return None
+
+@app.route("/compare", methods=["GET", "POST"])
+@login_required
+def compare():
+    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).limit(20).all()
+    if request.method == "POST":
+        ids = request.form.getlist("ids")[:3]
+        reps = [r for r in rs if str(r.id) in ids]
+        if len(reps) < 2:
+            flash("Seleziona almeno 2 report", "error")
+            return redirect("/compare")
+        labels = [("score", "Score Buffett"), ("Q08", "Valore intrinseco/az"), ("Q09", "Margine sicurezza %"),
+                  ("Q16", "Earnings Yield %"), ("Q32", "P/E"), ("Q34", "P/BV"),
+                  ("B1", "ROE %"), ("B2", "ROA %"), ("B4", "CET1 %"), ("B5", "Cost/Income %")]
+        rows = ""
+        for k, lab in labels:
+            cells = "".join(f"<td style='border:1px solid #30363d;padding:8px'>{_fmtv(_get_metric(r, k))}</td>" for r in reps)
+            rows += f"<tr><td style='border:1px solid #30363d;padding:8px;color:#f0b429'>{lab}</td>{cells}</tr>"
+        head = "".join(f"<th style='border:1px solid #30363d;padding:8px'>{r.company or r.filename}</th>" for r in reps)
+        content = f"<h1>Confronto aziende</h1><table style='width:100%;border-collapse:collapse;background:#161b22'><tr><td style='border:1px solid #30363d;padding:8px'></td>{head}</tr>{rows}</table>"
+        return render_template_string(BASE_TEMPLATE, title="Confronto", content=content)
+    boxes = "".join(f"<label style='display:block;margin:6px 0'><input type='checkbox' name='ids' value='{r.id}'> {r.company or r.filename} ({r.created_at:%d/%m/%Y})</label>" for r in rs)
+    content = f"<div class='card'><h1>Confronta aziende</h1><p>Seleziona 2-3 report salvati per il confronto fianco a fianco.</p><form method='post'>{boxes}<button type='submit' style='margin-top:1rem'>Confronta</button></form></div>"
+    return render_template_string(BASE_TEMPLATE, title="Confronta", content=content)
+
 with app.app_context():
     db.create_all()
     if not User.query.filter_by(email="demo@demo.com").first():
@@ -530,4 +626,4 @@ with app.app_context():
 if __name__ == "__main__":
     print("Buffett Analyzer WEB con login: http://127.0.0.1:5001")
     print("Account demo: demo@demo.com / demo123")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False, threaded=True)
