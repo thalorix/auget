@@ -6,3 +6,4 @@ pypdf
 pdfplumber
 python-docx
 yfinance
+psycopg2-binary
