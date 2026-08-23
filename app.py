@@ -60,7 +60,7 @@ def send_email(to, subject, body):
         import requests as _rq
         _rq.post("https://api.resend.com/emails",
                  headers={"Authorization": "Bearer " + key},
-                 json={"from": "Buffett Analyzer <noreply@sibilla.cc>",
+                 json={"from": "AUGET <noreply@sibilla.cc>",
                        "to": [to], "subject": subject, "html": body}, timeout=10)
     except Exception as e:
         print("[email-err]", e)
@@ -166,36 +166,54 @@ def subscription_required(f):
 BASE_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>{{ title }}</title>
 <style>
-body{background:#0d1117;color:#e6e6e6;font-family:'Segoe UI',system-ui,sans-serif;margin:0;min-height:100vh}
-.nav{background:#161b22;padding:1rem 2rem;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.nav a{color:#f0b429;text-decoration:none;margin-left:1rem}
-.container{max-width:900px;margin:2rem auto;padding:0 2rem}
-.card{background:#161b22;border:1px solid #30363d;border-radius:14px;padding:2rem;margin:1rem 0}
-h1{color:#f0b429}h2{color:#f0b429}
-input,select,textarea{width:100%;padding:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6e6e6;margin:8px 0;box-sizing:border-box}
-button{background:#f0b429;color:#0d1117;border:0;padding:12px 28px;border-radius:8px;font-weight:700;cursor:pointer;font-size:15px;width:100%}
+:root{--bg:#0b1220;--card:#121c30;--line:#233250;--gold:#f0b429;--teal:#2dd4a7;--blue:#4cc3ff;--text:#e8eef7;--muted:#93a4bd}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;margin:0;min-height:100vh}
+.nav{background:#0e1728;padding:.8rem 2rem;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem}
+.brand{color:var(--gold);font-weight:800;font-size:1.25rem;letter-spacing:3px}
+.nav a{text-decoration:none;margin-left:1rem}
+.tools a{color:var(--teal);font-weight:600}
+.tools a:hover{color:#7ff0d0}
+.admin a{color:var(--muted)}
+.admin a:hover{color:var(--blue)}
+.container{max-width:960px;margin:2rem auto;padding:0 2rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:2rem;margin:1rem 0}
+.hero{background:linear-gradient(135deg,#13223d,#0e1728);text-align:center}
+h1{color:var(--gold)}h2{color:var(--teal)}
+input,select,textarea{width:100%;padding:10px;background:#0b1220;border:1px solid var(--line);border-radius:8px;color:var(--text);margin:8px 0;box-sizing:border-box}
+button{background:var(--gold);color:#0b1220;border:0;padding:12px 28px;border-radius:10px;font-weight:700;cursor:pointer;font-size:15px;width:100%}
 button:hover{background:#ffc94d}
-.alert{padding:12px;border-radius:6px;margin:1rem 0}
+.btn2{background:var(--teal);color:#0b1220}
+.alert{padding:12px;border-radius:8px;margin:1rem 0}
 .error{background:#da3633;color:white}
 .success{background:#238636;color:white}
-.tier{border:2px solid #30363d;border-radius:12px;padding:1.5rem;margin:1rem 0;text-align:center}
-.tier.active{border-color:#f0b429}
-.tier h3{color:#f0b429;font-size:1.5rem;margin:0}
-.price{font-size:2rem;color:#f0b429;margin:1rem 0}
-table{width:100%;border-collapse:collapse;background:#161b22;margin:1rem 0}
-td,th{border:1px solid #30363d;padding:8px;text-align:left}
+.tier{border:2px solid var(--line);border-radius:14px;padding:1.5rem;margin:1rem 0;text-align:center}
+.tier.active{border-color:var(--gold)}
+.tier h3{color:var(--gold);font-size:1.5rem;margin:0}
+.price{font-size:2rem;color:var(--teal);margin:1rem 0}
+table{width:100%;border-collapse:collapse;background:var(--card);margin:1rem 0}
+td,th{border:1px solid var(--line);padding:8px;text-align:left}
+.pill{display:inline-block;padding:4px 14px;border-radius:20px;font-size:.85rem;margin:4px}
+.pill-teal{background:rgba(45,212,167,.15);color:var(--teal);border:1px solid var(--teal)}
+.pill-blue{background:rgba(76,195,255,.12);color:var(--blue);border:1px solid var(--blue)}
+.pill-gold{background:rgba(240,180,41,.12);color:var(--gold);border:1px solid var(--gold)}
 </style></head>
 <body>
 <div class="nav">
-  <div><strong style="color:#f0b429">Buffett Analyzer</strong></div>
-  <div>
-    <a href="/">Home</a><a href="/contatti">Contatti</a><a href="/collabora">Collabora</a>
+  <div class="brand">AUGET</div>
+  <div class="tools">
     {% if current_user.is_authenticated %}
-      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a><a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
-      <span style="color:#9aa4b2">{{ current_user.email }}</span>
-      <a href="/logout">Esci</a>
+      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a>
     {% else %}
-      <a href="/login">Accedi</a><a href="/register">Registrati</a>
+      <a href="/">Home</a>
+    {% endif %}
+  </div>
+  <div class="admin">
+    <a href="/contatti">Contatti</a><a href="/collabora">Collabora</a>
+    {% if current_user.is_authenticated %}
+      <a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
+      <span style="color:var(--muted)">{{ current_user.email }}</span><a href="/logout">Esci</a>
+    {% else %}
+      <a href="/login">Accedi</a><a href="/register" style="color:var(--gold);font-weight:700">Registrati</a>
     {% endif %}
   </div>
 </div>
@@ -223,32 +241,37 @@ def favicon():
 @app.route("/")
 def index():
     content = """
-    <div class="card" style="text-align:center">
-      <h1 style="font-size:2.4rem">Analisi fondamentale automatica,<br>in stile Warren Buffett</h1>
-      <p>Carica un bilancio (PDF, DOCX, TXT) e ottieni in pochi secondi una dashboard completa: punteggio 0-100, criteri quantitativi e qualitativi, valutazione DCF e metriche bancarie.</p>
+    <div class="card hero">
+      <h1 style="font-size:2.8rem;margin:0;letter-spacing:4px">AUGET</h1>
+      <p style="font-size:1.2rem;color:var(--teal)">Capire se un'azienda e solida, quanto vale e se il prezzo e giusto.<br>In una sola pagina, in pochi secondi.</p>
+      <p style="color:var(--muted)">Auget legge il bilancio ufficiale (PDF, DOCX o TXT) e lo trasforma in una dashboard chiara: un punteggio da 0 a 100, i punti di forza, i rischi e il margine di sicurezza, secondo i principi del value investing.</p>
       <p><a href="/register"><button style="width:auto;margin:0 6px">Inizia gratis</button></a>
-      <a href="/login"><button style="width:auto;margin:0 6px;background:#30363d;color:#e6e6e6">Accedi</button></a></p>
+      <a href="/login"><button class="btn2" style="width:auto;margin:0 6px">Accedi</button></a></p>
     </div>
-    <div class="card"><h2>Cosa fa</h2>
-    <ul style="line-height:1.9">
-      <li><strong>Punteggio Buffett 0-100</strong> con rubrica ponderata su 4 aree</li>
-      <li><strong>40 criteri quantitativi</strong> per aziende industriali e tech</li>
-      <li><strong>20 criteri bancari</strong> (ROE/RoTE, ROA, CET1, NPL, Cost/Income)</li>
-      <li><strong>Gestione buyback</strong>: ROE/ROIC normalizzati per le Big Tech</li>
-      <li><strong>Valutazione DCF multi-scenario</strong> con margine di sicurezza</li>
-      <li><strong>Prezzo di borsa</strong> automatico (yfinance) o manuale</li>
+    <div class="card"><h2>Perche esiste</h2>
+    <p>Un bilancio annuale ha 100-1000 pagine. Auget le legge per te e ti dice quello che conta davvero, senza fogli di calcolo e senza competenze da analista: <strong>questa azienda e sana? vale piu o meno di quanto costa?</strong></p>
+    <p><span class="pill pill-teal">Investitori privati</span><span class="pill pill-blue">Studenti</span><span class="pill pill-gold">Professionisti e consulenti</span></p></div>
+    <div class="card"><h2>Cosa fa per te</h2>
+    <ul style="line-height:2">
+      <li><strong style="color:var(--gold)">Punteggio 0-100</strong> con verdetto immediato (eccellente / buona / da approfondire / fragile)</li>
+      <li><strong style="color:var(--gold)">40 indicatori</strong> su redditivita, cassa, crescita e valutazione per aziende normali</li>
+      <li><strong style="color:var(--gold)">20 indicatori bancari</strong> (ROE, ROA, CET1, NPL, Cost/Income) per le banche</li>
+      <li><strong style="color:var(--gold)">Valutazione multi-scenario</strong> con margine di sicurezza: quanto sconto hai rispetto al valore reale</li>
+      <li><strong style="color:var(--gold)">Prezzo di borsa automatico</strong> e confronto istantaneo con il valore calcolato</li>
+      <li><strong style="color:var(--gold)">Storico, watchlist e confronto</strong> tra aziende, salvati nel tuo account</li>
     </ul></div>
     <div class="card"><h2>Come funziona</h2>
-    <ol style="line-height:1.9">
-      <li>Ti registri e scegli un piano (7 giorni di prova gratuita)</li>
-      <li>Carichi il bilancio annuale o la relazione finanziaria</li>
-      <li>Ricevi la dashboard completa e il report HTML esportabile</li>
+    <ol style="line-height:2.1">
+      <li><strong style="color:var(--teal)">Carichi</strong> il bilancio o la relazione annuale (anche il 10-K americano)</li>
+      <li><strong style="color:var(--teal)">Auget analizza</strong> 60+ voci di bilancio in ~1 minuto</li>
+      <li><strong style="color:var(--teal)">Leggi la dashboard</strong>: punteggio, rischi, valore e margine di sicurezza - ed esporti il report</li>
     </ol></div>
-    <div class="card"><h2>Chi sono</h2>
-    <p>Sono Matteo Zanoni, sviluppatore e appassionato di value investing. Ho creato Buffett Analyzer per rendere l'analisi fondamentale professionale accessibile a tutti.</p>
-    <p>Vuoi collaborare o hai una proposta? <a href="/collabora" style="color:#f0b429">Parliamone</a> · <a href="/contatti" style="color:#f0b429">Contatti</a></p></div>
+    <div class="card" style="text-align:center"><h2>Prova ora</h2>
+    <p style="color:var(--muted)">7 giorni gratis, senza carta di credito.</p>
+    <p><a href="/register"><button style="width:auto">Crea il tuo account</button></a></p>
+    <p style="color:var(--muted);font-size:.9rem">Domande? <a href="/contatti" style="color:var(--blue)">Contatti</a> · Vuoi collaborare? <a href="/collabora" style="color:var(--blue)">Collabora</a></p></div>
     """
-    return render_template_string(BASE_TEMPLATE, title="Buffett Analyzer", content=content)
+    return render_template_string(BASE_TEMPLATE, title="AUGET", content=content)
 
 @app.route("/contatti")
 def contatti():
@@ -292,7 +315,7 @@ def register():
         db.session.add(user)
         db.session.commit()
         login_user(user)
-        send_email(email, "Benvenuto in Buffett Analyzer",
+        send_email(email, "Benvenuto in AUGET",
                    "<p>Il tuo account e pronto: 7 giorni di prova gratuita.</p>")
         flash("Registrazione completata! Hai 7 giorni di prova gratuita.", "success")
         return redirect(url_for("pricing"))
@@ -425,7 +448,7 @@ def do_analyze():
     try:
         res = engine.analyze_document(path)
         html_path = engine.export_html(res)
-        html = open(html_path, encoding="utf-8").read()
+        html = open(html_path, encoding="utf-8").read().replace("BUFFETT ANALYZER", "AUGET").replace("Buffett Analyzer", "AUGET")
         sel = {"score": res.get("scores", {}).get("total")}
         for m in res.get("quant", []):
             if m.code in ("Q08", "Q09", "Q16", "Q32", "Q34", "B1", "B2", "B4", "B5"):
@@ -635,7 +658,7 @@ def privacy():
 def termini():
     content = """<div class="card"><h1>Termini di Servizio</h1>
     <h2>Servizio</h2>
-    <p>Buffett Analyzer è uno strumento di analisi fondamentale automatizzato. Non costituisce consulenza finanziaria.</p>
+    <p>AUGET è uno strumento di analisi fondamentale automatizzato. Non costituisce consulenza finanziaria.</p>
     <h2>Abbonamenti</h2>
     <p>Gli abbonamenti sono mensili e si rinnovano automaticamente. Puoi cancellare in qualsiasi momento dal portale Stripe.</p>
     <h2>Responsabilità</h2>
@@ -652,7 +675,7 @@ def disclaimer():
     content = """<div class="card"><h1>Disclaimer Finanziario</h1>
     <p><strong>IMPORTANTE:</strong> Questo strumento NON fornisce consulenza finanziaria, raccomandazioni di investimento o sollecitazioni all'acquisto/vendita di strumenti finanziari.</p>
     <h2>Natura del servizio</h2>
-    <p>Buffett Analyzer è uno strumento educativo e informativo che applica criteri quantitativi all'analisi di bilanci pubblici. Le analisi sono generate automaticamente da algoritmi.</p>
+    <p>AUGET è uno strumento educativo e informativo che applica criteri quantitativi all'analisi di bilanci pubblici. Le analisi sono generate automaticamente da algoritmi.</p>
     <h2>Limitazioni</h2>
     <ul>
       <li>I dati potrebbero essere incompleti o contenere errori</li>
@@ -678,6 +701,6 @@ with app.app_context():
         print("Account demo creato: demo@demo.com / demo123")
 
 if __name__ == "__main__":
-    print("Buffett Analyzer WEB con login: http://127.0.0.1:5001")
+    print("AUGET WEB con login: http://127.0.0.1:5001")
     print("Account demo: demo@demo.com / demo123")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False, threaded=True)
