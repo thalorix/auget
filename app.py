@@ -208,6 +208,11 @@ td,th{border:1px solid #30363d;padding:8px;text-align:left}
     {% endif %}
   {% endwith %}
   {{ content|safe }}
+<div style="text-align:center;padding:2rem;color:#9aa4b2;border-top:1px solid #30363d;margin-top:3rem">
+  <a href="/privacy" style="color:#f0b429">Privacy</a> · 
+  <a href="/termini" style="color:#f0b429">Termini</a> · 
+  <a href="/disclaimer" style="color:#f0b429">Disclaimer</a>
+</div>
 </div>
 </body></html>"""
 
@@ -605,6 +610,62 @@ def portal():
         return redirect(url_for("pricing"))
     sess = stripe.billing_portal.Session.create(customer=current_user.stripe_customer_id, return_url=request.host_url)
     return redirect(sess.url)
+
+@app.route("/privacy")
+def privacy():
+    content = """<div class="card"><h1>Privacy Policy</h1>
+    <p><strong>Titolare:</strong> Matteo Zanoni - info@sibilla.cc</p>
+    <h2>Dati raccolti</h2>
+    <ul>
+      <li><strong>Registrazione:</strong> email, password (cifrata)</li>
+      <li><strong>Pagamenti:</strong> gestiti da Stripe (non conserviamo dati carta)</li>
+      <li><strong>File caricati:</strong> bilanci aziendali (PDF/DOCX), eliminati dopo 30 giorni</li>
+      <li><strong>Analisi generate:</strong> salvate nel tuo account per consultazione futura</li>
+    </ul>
+    <h2>Finalità</h2>
+    <p>Fornire il servizio di analisi, gestione abbonamenti, supporto tecnico.</p>
+    <h2>Diritti</h2>
+    <p>Puoi richiedere accesso, cancellazione o portabilità dei dati scrivendo a info@sibilla.cc.</p>
+    <h2>Cookie</h2>
+    <p>Usiamo solo cookie tecnici di sessione (necessari per il login). Nessun cookie di tracciamento.</p>
+    </div>"""
+    return render_template_string(BASE_TEMPLATE, title="Privacy", content=content)
+
+@app.route("/termini")
+def termini():
+    content = """<div class="card"><h1>Termini di Servizio</h1>
+    <h2>Servizio</h2>
+    <p>Buffett Analyzer è uno strumento di analisi fondamentale automatizzato. Non costituisce consulenza finanziaria.</p>
+    <h2>Abbonamenti</h2>
+    <p>Gli abbonamenti sono mensili e si rinnovano automaticamente. Puoi cancellare in qualsiasi momento dal portale Stripe.</p>
+    <h2>Responsabilità</h2>
+    <p>Le analisi sono generate automaticamente da algoritmi e potrebbero contenere errori. L'utente è responsabile delle proprie decisioni di investimento.</p>
+    <h2>Recesso</h2>
+    <p>Puoi cancellare l'abbonamento in qualsiasi momento. Nessun rimborso per periodi già fruiti.</p>
+    <h2>Legge applicabile</h2>
+    <p>Questi termini sono regolati dalla legge italiana. Foro competente: Milano.</p>
+    </div>"""
+    return render_template_string(BASE_TEMPLATE, title="Termini", content=content)
+
+@app.route("/disclaimer")
+def disclaimer():
+    content = """<div class="card"><h1>Disclaimer Finanziario</h1>
+    <p><strong>IMPORTANTE:</strong> Questo strumento NON fornisce consulenza finanziaria, raccomandazioni di investimento o sollecitazioni all'acquisto/vendita di strumenti finanziari.</p>
+    <h2>Natura del servizio</h2>
+    <p>Buffett Analyzer è uno strumento educativo e informativo che applica criteri quantitativi all'analisi di bilanci pubblici. Le analisi sono generate automaticamente da algoritmi.</p>
+    <h2>Limitazioni</h2>
+    <ul>
+      <li>I dati potrebbero essere incompleti o contenere errori</li>
+      <li>Le performance passate non garantiscono risultati futuri</li>
+      <li>Il valore degli investimenti può scendere così come salire</li>
+      <li>Non teniamo conto della tua situazione personale, obiettivi o tolleranza al rischio</li>
+    </ul>
+    <h2>Responsabilità</h2>
+    <p>L'utente è l'unico responsabile delle proprie decisioni di investimento. Prima di investire, consulta un consulente finanziario autorizzato.</p>
+    <h2>Regolamentazione</h2>
+    <p>Questo servizio non è soggetto a vigilanza da parte di CONSOB, Banca d'Italia o altre autorità di regolamentazione finanziaria.</p>
+    </div>"""
+    return render_template_string(BASE_TEMPLATE, title="Disclaimer", content=content)
 
 with app.app_context():
     db.create_all()
