@@ -763,6 +763,24 @@ def disclaimer():
     return render_template_string(BASE_TEMPLATE, title="Disclaimer", content=content)
 
 with app.app_context():
+    # Auto-migrazione: aggiungi colonne mancanti alle tabelle esistenti
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    for table_cls in [User, Report, WatchItem, Ticket, Feedback, CollabRequest]:
+        table_name = table_cls.__tablename__
+        if table_name in inspector.get_table_names():
+            existing_cols = {c['name'] for c in inspector.get_columns(table_name)}
+            for col in table_cls.__table__.columns:
+                if col.name not in existing_cols and col.name != 'id':
+                    col_type = str(col.type.compile(db.engine.dialect))
+                    try:
+                        db.session.execute(text(f'ALTER TABLE "{table_name}" ADD COLUMN IF NOT EXISTS {col.name} {col_type}'))
+                        print(f"Aggiunta colonna {table_name}.{col.name}")
+                    except Exception as e:
+                        print(f"Skip colonna {col.name}: {e}")
+            db.session.commit()
+    db.create_all()
+    
     db.create_all()
     if not User.query.filter_by(email="demo@demo.com").first():
         demo = User(email="demo@demo.com", subscription_tier="demo",
