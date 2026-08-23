@@ -1,6 +1,6 @@
 import os, sys
 from datetime import datetime, timedelta
-from flask import Flask, request, redirect, url_for, render_template_string, flash, send_file
+from flask import Flask, request, redirect, url_for, render_template_string, flash, send_file, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -78,6 +78,28 @@ STRIPE_PRICES = {"basic": os.environ.get("STRIPE_PRICE_BASIC"),
                  "pro": os.environ.get("STRIPE_PRICE_PRO"),
                  "enterprise": os.environ.get("STRIPE_PRICE_ENTERPRISE")}
 
+import secrets as _secrets
+import hashlib as _hashlib
+
+def _gen_codes(n=10):
+    return [f"{_secrets.token_hex(2).upper()}-{_secrets.token_hex(2).upper()}" for _ in range(n)]
+
+def _hash_code(c):
+    return _hashlib.sha256((c or "").strip().upper().encode()).hexdigest()
+
+def send_sms(to, body):
+    sid = os.environ.get("TWILIO_SID"); tok = os.environ.get("TWILIO_TOKEN"); frm = os.environ.get("TWILIO_FROM")
+    if not (sid and tok and frm):
+        print(f"[sms-sim] -> {to}: {body}")
+        return False
+    try:
+        from twilio.rest import Client
+        Client(sid, tok).messages.create(body=body, from_=frm, to=to)
+        return True
+    except Exception as e:
+        print("[sms-err]", e)
+        return False
+
 PLAN_LIMITS = {"basic": 10, "trial": 3, "pro": None, "enterprise": None, "demo": None}
 
 def _used_this_month(uid):
@@ -92,6 +114,12 @@ class User(UserMixin, db.Model):
     subscription_expires = db.Column(db.DateTime)
     stripe_customer_id = db.Column(db.String(120))
     stripe_subscription_id = db.Column(db.String(120))
+    phone = db.Column(db.String(30))
+    recovery_hash = db.Column(db.Text)
+    otp_hash = db.Column(db.String(120))
+    otp_expires = db.Column(db.DateTime)
+    reset_token = db.Column(db.String(120))
+    reset_expires = db.Column(db.DateTime)
     
     def set_password(self, pw):
         self.password_hash = generate_password_hash(pw)
@@ -312,18 +340,23 @@ def register():
         user = User(email=email, subscription_tier="trial",
                     subscription_expires=datetime.utcnow() + timedelta(days=7))
         user.set_password(password)
+        user.phone = (request.form.get("phone") or "").strip() or None
+        codes = _gen_codes()
+        user.recovery_hash = _json.dumps([_hash_code(c) for c in codes])
         db.session.add(user)
         db.session.commit()
+        session["new_codes"] = codes
         login_user(user)
         send_email(email, "Benvenuto in AUGET",
                    "<p>Il tuo account e pronto: 7 giorni di prova gratuita.</p>")
-        flash("Registrazione completata! Hai 7 giorni di prova gratuita.", "success")
-        return redirect(url_for("pricing"))
+        flash("Registrazione completata! Salva i tuoi codici di recupero.", "success")
+        return redirect("/codes")
     content = """<div class="card">
     <h1>Registrati</h1>
     <form method="post">
       <input type="email" name="email" placeholder="Email" required>
       <input type="password" name="password" placeholder="Password" required>
+      <input name="phone" placeholder="Telefono (facoltativo, per recupero SMS)">
       <button type="submit">Crea account</button>
     </form>
     <p style="text-align:center;margin-top:1rem">Hai gia un account? <a href="/login" style="color:#f0b429">Accedi</a></p>
