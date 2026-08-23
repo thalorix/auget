@@ -762,6 +762,57 @@ def disclaimer():
     </div>"""
     return render_template_string(BASE_TEMPLATE, title="Disclaimer", content=content)
 
+@app.route("/force-setup")
+def force_setup():
+    with app.app_context():
+        if not User.query.filter_by(email="demo@demo.com").first():
+            d = User(email="demo@demo.com", subscription_tier="demo", subscription_expires=datetime.utcnow()+timedelta(days=3650))
+            d.set_password("demo123"); db.session.add(d)
+        if not User.query.filter_by(email="admin@sibilla.cc").first():
+            a = User(email="admin@sibilla.cc", subscription_tier="admin", subscription_expires=datetime.utcnow()+timedelta(days=36500))
+            a.set_password("AugetAdmin!2026"); db.session.add(a)
+        db.session.commit()
+        return "<h1>Fatto</h1><p>demo@demo.com / demo123</p><p>admin@sibilla.cc / AugetAdmin!2026</p><p><a href='/login'>Login</a></p>"
+
+@app.route("/admin", methods=["GET", "POST"])
+@login_required
+def admin():
+    if current_user.subscription_tier != "admin":
+        return ("non autorizzato", 403)
+    cfg = get_cfg()
+    if request.method == "POST":
+        act = request.form.get("action")
+        if act == "toggle_site":
+            cfg.site_open = not cfg.site_open
+        elif act == "toggle_demo":
+            cfg.demo_enabled = not cfg.demo_enabled
+        elif act == "save_contacts":
+            cfg.contact_email = request.form.get("contact_email") or cfg.contact_email
+            cfg.contact_telegram = request.form.get("contact_telegram") or cfg.contact_telegram
+            cfg.contact_linkedin = request.form.get("contact_linkedin") or cfg.contact_linkedin
+        db.session.commit()
+        flash("Impostazioni salvate.", "success")
+        return redirect("/admin")
+    stato = "APERTO" if cfg.site_open else "CHIUSO (lucchetto attivo)"
+    content = f"""<div class="card"><h1>Pannello Admin</h1>
+    <p><strong>Stato sito:</strong> <span style="color:{'var(--teal)' if cfg.site_open else '#da3633'}">{stato}</span></p>
+    <form method="post"><input type="hidden" name="action" value="toggle_site">
+      <button type="submit" style="width:auto;background:{'#da3633' if cfg.site_open else 'var(--teal)'};color:white">{'Chiudi sito (lucchetto)' if cfg.site_open else 'Apri sito'}</button></form>
+    <p style="margin-top:1.5rem"><strong>Account demo:</strong> {'ATTIVO' if cfg.demo_enabled else 'DISATTIVATO'}</p>
+    <form method="post"><input type="hidden" name="action" value="toggle_demo">
+      <button type="submit" class="btn2" style="width:auto">{'Disabilita demo' if cfg.demo_enabled else 'Abilita demo'}</button></form>
+    </div>
+    <div class="card"><h2>Contatti pubblici</h2>
+    <form method="post"><input type="hidden" name="action" value="save_contacts">
+      <input name="contact_email" value="{cfg.contact_email}">
+      <input name="contact_telegram" value="{cfg.contact_telegram}">
+      <input name="contact_linkedin" value="{cfg.contact_linkedin}">
+      <button type="submit" class="btn2" style="width:auto">Salva contatti</button></form>
+    </div>
+    <div class="card"><h2>Statistiche</h2>
+    <p>Utenti: {User.query.count()} · Report: {Report.query.count()} · Ticket aperti: {Ticket.query.filter_by(status='aperto').count()}</p></div>"""
+    return render_template_string(BASE_TEMPLATE, title="Admin", content=content)
+
 with app.app_context():
     # Auto-migrazione: aggiungi colonne mancanti alle tabelle esistenti
     from sqlalchemy import inspect, text
