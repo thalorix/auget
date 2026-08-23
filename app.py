@@ -129,7 +129,7 @@ class User(UserMixin, db.Model):
     
     @property
     def subscription_active(self):
-        if self.subscription_tier == "demo":
+        if self.subscription_tier in ("demo", "admin"):
             return True
         if not self.subscription_expires:
             return False
@@ -176,6 +176,21 @@ class WatchItem(db.Model):
     note = db.Column(db.String(300))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class SiteConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    site_open = db.Column(db.Boolean, default=True)
+    demo_enabled = db.Column(db.Boolean, default=True)
+    contact_email = db.Column(db.String(120), default="info@sibilla.cc")
+    contact_telegram = db.Column(db.String(120), default="@sibilla_finance")
+    contact_linkedin = db.Column(db.String(200), default="linkedin.com/in/matteo-zanoni")
+
+def get_cfg():
+    c = SiteConfig.query.first()
+    if not c:
+        c = SiteConfig()
+        db.session.add(c); db.session.commit()
+    return c
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
@@ -190,6 +205,20 @@ def subscription_required(f):
             return redirect(url_for("pricing"))
         return f(*args, **kwargs)
     return decorated
+
+@app.before_request
+def _site_gate():
+    if request.endpoint in (None, "login", "register", "recover", "recover_reset", "favicon", "static", "admin"):
+        return None
+    cfg = get_cfg()
+    if cfg.site_open:
+        return None
+    if current_user.is_authenticated:
+        t = current_user.subscription_tier
+        if t == "admin" or (t == "demo" and cfg.demo_enabled):
+            return None
+    return render_template_string(BASE_TEMPLATE, title="Manutenzione",
+        content="<div class='card' style='text-align:center'><h1>Sito in manutenzione</h1><p style='color:var(--muted)'>AUGET tornera disponibile a breve. Riprova piu tardi.</p><p><a href='/login' style='color:var(--blue)'>Accesso riservato</a></p></div>"), 503
 
 BASE_TEMPLATE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>{{ title }}</title>
@@ -239,7 +268,8 @@ td,th{border:1px solid var(--line);padding:8px;text-align:left}
     <a href="/contatti">Contatti</a><a href="/collabora">Collabora</a>
     {% if current_user.is_authenticated %}
       <a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
-      <span style="color:var(--muted)">{{ current_user.email }}</span><a href="/logout">Esci</a>
+      <span style="color:var(--muted)">{{ current_user.email }}</span>{% if current_user.subscription_tier == "admin" %}<a href="/admin" style="color:var(--gold);font-weight:700">Admin</a>{% endif %}
+      <a href="/logout">Esci</a>
     {% else %}
       <a href="/login">Accedi</a><a href="/register" style="color:var(--gold);font-weight:700">Registrati</a>
     {% endif %}
@@ -303,10 +333,11 @@ def index():
 
 @app.route("/contatti")
 def contatti():
-    content = """<div class="card"><h1>Contatti</h1>
-    <p><strong>Email:</strong> info@sibilla.cc</p>
-    <p><strong>Telegram:</strong> @sibilla_finance</p>
-    <p><strong>LinkedIn:</strong> linkedin.com/in/matteo-zanoni</p>
+    cfg = get_cfg()
+    content = f"""<div class="card"><h1>Contatti</h1>
+    <p><strong>Email:</strong> {cfg.contact_email}</p>
+    <p><strong>Telegram:</strong> {cfg.contact_telegram}</p>
+    <p><strong>LinkedIn:</strong> {cfg.contact_linkedin}</p>
     <p>Risposta entro 24-48 ore.</p></div>"""
     return render_template_string(BASE_TEMPLATE, title="Contatti", content=content)
 
@@ -332,6 +363,9 @@ def collabora():
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
+        if not get_cfg().site_open:
+            flash("Registrazioni sospese durante la manutenzione.", "error")
+            return redirect(url_for("index"))
         email = request.form.get("email")
         password = request.form.get("password")
         if User.query.filter_by(email=email).first():
@@ -370,6 +404,11 @@ def login():
         password = request.form.get("password")
         user = User.query.filter_by(email=email).first()
         if user and user.check_password(password):
+            cfg = get_cfg()
+            t = user.subscription_tier
+            if not cfg.site_open and t != "admin" and not (t == "demo" and cfg.demo_enabled):
+                flash("Sito in manutenzione: accesso temporaneamente riservato.", "error")
+                return redirect(url_for("index"))
             login_user(user)
             if not user.subscription_active:
                 return redirect(url_for("pricing"))
@@ -732,6 +771,13 @@ with app.app_context():
         db.session.add(demo)
         db.session.commit()
         print("Account demo creato: demo@demo.com / demo123")
+    if not User.query.filter_by(email="admin@sibilla.cc").first():
+        adm = User(email="admin@sibilla.cc", subscription_tier="admin",
+                   subscription_expires=datetime.utcnow() + timedelta(days=36500))
+        adm.set_password("AugetAdmin!2026")
+        db.session.add(adm)
+        db.session.commit()
+        print("Account admin creato: admin@sibilla.cc / AugetAdmin!2026")
 
 if __name__ == "__main__":
     print("AUGET WEB con login: http://127.0.0.1:5001")
