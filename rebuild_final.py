@@ -1,4 +1,5 @@
-import os, sys
+# Ricostruzione completa app.py con tutte le feature
+CODE = r'''import os, sys
 from datetime import datetime, timedelta
 from flask import Flask, request, redirect, url_for, render_template_string, flash, send_file, session
 from flask_sqlalchemy import SQLAlchemy
@@ -784,3 +785,7 @@ with app.app_context():
 if __name__ == "__main__":
     print("AUGET WEB con login: http://127.0.0.1:5001")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False, threaded=True)
+'''
+with open("app.py", "w", encoding="utf-8") as f:
+    f.write(CODE)
+print("✔ rebuild completo: tutte le feature integrate")
