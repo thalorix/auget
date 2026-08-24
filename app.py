@@ -261,7 +261,7 @@ td,th{border:1px solid var(--line);padding:8px;text-align:left}
   <div class="brand">AUGET</div>
   <div class="tools">
     {% if current_user.is_authenticated %}
-      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a><a href="/ranking">Classifica</a>
+      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a><a href="/ranking">Classifica</a><a href="/simula">Simula</a>
     {% else %}
       <a href="/">Home</a>
     {% endif %}
@@ -525,8 +525,11 @@ def do_analyze():
         html = open(html_path, encoding="utf-8").read().replace("BUFFETT ANALYZER", "AUGET").replace("Buffett Analyzer", "AUGET")
         sel = {"score": res.get("scores", {}).get("total")}
         for m in res.get("quant", []):
-            if m.code in ("Q08", "Q09", "Q16", "Q32", "Q34", "B1", "B2", "B4", "B5"):
+            if m.code in ("Q08", "Q09", "Q16", "Q18", "Q32", "Q34", "B1", "B2", "B4", "B5"):
                 sel[m.code] = m.value
+        _D = res.get("D", {})
+        sel.update({"oe": _D.get("oe") or _D.get("fcf"), "fcf": _D.get("fcf"),
+                    "shares": _D.get("shares"), "price": _D.get("price")})
         rep = Report(user_id=current_user.id, filename=f.filename,
                      company=res.get("company", ""),
                      score=sel["score"], html=html,
@@ -822,6 +825,61 @@ def guida():
     rows = "".join(f"<div class='card'><h2>{k}</h2><p>{v}</p></div>" for k, v in items)
     content = "<h1>Guida ai criteri</h1><p style='color:var(--muted)'>Il significato di ogni dato usato da AUGET, spiegato semplice.</p>" + rows
     return render_template_string(BASE_TEMPLATE, title="Guida", content=content)
+
+def _sim_dcf(oe, g, r, years=10, tg=0.02):
+    if r <= tg:
+        r = tg + 0.01
+    iv = 0.0; cf = oe
+    for t in range(1, years + 1):
+        cf *= (1 + g)
+        iv += cf / (1 + r) ** t
+    iv += cf * (1 + tg) / (r - tg) / (1 + r) ** years
+    return iv
+
+@app.route("/simula", methods=["GET", "POST"])
+@login_required
+def simula():
+    rs = [r for r in Report.query.filter_by(user_id=current_user.id).all()
+          if _get_metric(r, "oe") and _get_metric(r, "shares")]
+    if not rs:
+        return render_template_string(BASE_TEMPLATE, title="Simula",
+            content="<div class='card'><h1>Simulazioni macro</h1><p>Analizza prima un report: servono owner earnings e numero di azioni.</p></div>")
+    rid = request.form.get("rid") or request.args.get("rid") or str(rs[0].id)
+    rep = next((r for r in rs if str(r.id) == str(rid)), rs[0])
+    m = _json.loads(rep.metrics_json or "{}")
+    oe = float(m.get("oe") or 0); shares = float(m.get("shares") or 1); price = m.get("price")
+    sgr = (m.get("Q18") or 8) / 100
+    if request.method == "POST":
+        rf = float(request.form.get("rf", 4)); infl = float(request.form.get("infl", 2))
+        gdp = float(request.form.get("gdp", 1.5)); prem = float(request.form.get("prem", 5.5))
+    else:
+        rf, infl, gdp, prem = 4.0, 2.0, 1.5, 5.5
+    cap = (infl + gdp) / 100 + 0.02
+    g_base = min(sgr, cap)
+    scen = [("Bear", (rf + 2 + prem + 1) / 100, min(infl / 100, cap), -0.25),
+            ("Base", (rf + prem) / 100, g_base, 0.0),
+            ("Bull", (max(rf - 1, 0.5) + max(prem - 1, 2)) / 100, min(g_base + 0.03, 0.20), 0.10)]
+    rows = ""
+    for name, r, g, shock in scen:
+        iv_ps = _sim_dcf(oe * (1 + shock), g, r) / shares
+        mos = (iv_ps - price) / iv_ps * 100 if price and iv_ps else None
+        verdict = "COMPRA" if (mos or 0) >= 30 else ("INTERESSANTE" if (mos or 0) >= 15 else "CARA")
+        rows += f"<tr><td>{name}</td><td>{r*100:.1f}%</td><td>{g*100:.1f}%</td><td style='color:var(--gold)'>{iv_ps:,.0f}</td><td>{f'{mos:.0f}%' if mos is not None else 'N/D'}</td><td>{verdict}</td></tr>"
+    opts = "".join(f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename}</option>" for r in rs)
+    content = f"""<div class='card'><h1>Simulazioni macro-economiche</h1>
+    <p style='color:var(--muted)'>Inserisci i dati macro attesi: AUGET ricalcola il valore intrinseco di {rep.company or rep.filename} in 3 scenari.</p>
+    <form method='post'>
+      <select name='rid'>{opts}</select>
+      <input name='rf' type='number' step='0.1' value='{rf}' placeholder='Tasso risk-free % (es. BTP/Treasury 10y)'>
+      <input name='infl' type='number' step='0.1' value='{infl}' placeholder='Inflazione attesa %'>
+      <input name='gdp' type='number' step='0.1' value='{gdp}' placeholder='Crescita PIL reale %'>
+      <input name='prem' type='number' step='0.1' value='{prem}' placeholder='Premio al rischio %'>
+      <button type='submit' class='btn2' style='margin-top:1rem'>Simula scenari</button>
+    </form></div>
+    <div class='card'><h2>Risultati (prezzo attuale: {price if price else 'N/D'})</h2>
+    <table><tr><th>Scenario</th><th>Tasso sconto</th><th>Crescita</th><th>Valore/azione</th><th>Margine</th><th>Verdetto</th></tr>{rows}</table>
+    <p style='color:var(--muted);font-size:.9rem'>Bear: risk-free +2%, premio +1%, utili -25%, crescita = inflazione. Bull: risk-free -1%, crescita +3%, utili +10%. La crescita e comunque limitata dal PIL nominale (inflazione + PIL +2%), come farebbe un vero analista.</p></div>"""
+    return render_template_string(BASE_TEMPLATE, title="Simula", content=content)
 
 with app.app_context():
         if not User.query.filter_by(email="demo@demo.com").first():
