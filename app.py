@@ -166,6 +166,8 @@ class Report(db.Model):
     score = db.Column(db.Float)
     html = db.Column(db.Text)
     metrics_json = db.Column(db.Text)
+    notes = db.Column(db.Text)
+    sector = db.Column(db.String(80))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class WatchItem(db.Model):
@@ -259,13 +261,13 @@ td,th{border:1px solid var(--line);padding:8px;text-align:left}
   <div class="brand">AUGET</div>
   <div class="tools">
     {% if current_user.is_authenticated %}
-      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a>
+      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a><a href="/ranking">Classifica</a>
     {% else %}
       <a href="/">Home</a>
     {% endif %}
   </div>
   <div class="admin">
-    <a href="/contatti">Contatti</a><a href="/collabora">Collabora</a>
+    <a href="/guida">Guida</a><a href="/contatti">Contatti</a><a href="/collabora">Collabora</a>
     {% if current_user.is_authenticated %}
       <a href="/assistenza">Assistenza</a><a href="/feedback">Feedback</a><a href="/pricing">Piani</a>
       <span style="color:var(--muted)">{{ current_user.email }}</span>{% if current_user.subscription_tier == "admin" %}<a href="/admin" style="color:var(--gold);font-weight:700">Admin</a>{% endif %}
@@ -540,9 +542,23 @@ def do_analyze():
 @app.route("/reports")
 @login_required
 def reports():
-    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
-    rows = "".join(f"<div class='card'><h2>{r.company or r.filename}</h2><p>Score: {r.score} - {r.created_at.strftime('%d/%m/%Y %H:%M')}</p><a href='/reports/{r.id}' style='color:#f0b429'>Apri report</a></div>" for r in rs)
-    content = "<h1>I tuoi report</h1>" + (rows or "<p>Nessun report salvato.</p>")
+    sec = request.args.get("sector", "")
+    allr = Report.query.filter_by(user_id=current_user.id).all()
+    sectors = sorted({r.sector for r in allr if r.sector})
+    rs = [r for r in allr if (not sec or r.sector == sec)]
+    rs.sort(key=lambda r: (r.score is None, -(r.score or 0)))
+    sec_links = "".join(f"<a href='/reports?sector={x}' class='pill pill-blue'>{x}</a>" for x in sectors)
+    rows = ""
+    for r in rs:
+        rows += f"""<div class='card'><h2>{r.company or r.filename}</h2>
+        <p>Score: <strong style='color:var(--gold)'>{r.score if r.score is not None else 'N/D'}</strong> · Settore: {r.sector or 'non impostato'} · {r.created_at.strftime('%d/%m/%Y')}</p>
+        <p><a href='/reports/{r.id}' style='color:var(--teal)'>Apri report</a></p>
+        <form method='post' action='/reports/{r.id}/edit'>
+          <input name='sector' placeholder='Settore (es. Tech, Banca, Energy)' value='{r.sector or ''}'>
+          <textarea name='notes' rows='2' placeholder='Le tue note personali su questa azienda'>{r.notes or ''}</textarea>
+          <button class='btn2' style='width:auto' type='submit'>Salva modifiche</button>
+        </form></div>"""
+    content = "<h1>I tuoi report (dal migliore al peggiore)</h1><p>Filtra per settore: " + (sec_links or "nessuno ancora") + "</p>" + (rows or "<p>Nessun report salvato.</p>")
     return render_template_string(BASE_TEMPLATE, title="Report", content=content)
 
 @app.route("/reports/<int:rid>")
@@ -764,7 +780,50 @@ def disclaimer():
 
 @app.route("/force-setup")
 def force_setup():
-    with app.app_context():
+    @app.route("/reports/<int:rid>/edit", methods=["POST"])
+@login_required
+def report_edit(rid):
+    r = Report.query.get_or_404(rid)
+    if r.user_id != current_user.id:
+        return ("non autorizzato", 403)
+    r.sector = (request.form.get("sector") or "").strip() or None
+    r.notes = request.form.get("notes") or ""
+    db.session.commit()
+    flash("Report aggiornato.", "success")
+    return redirect("/reports")
+
+@app.route("/ranking")
+@login_required
+def ranking():
+    rs = Report.query.filter_by(user_id=current_user.id).all()
+    rs.sort(key=lambda r: (r.score is None, -(r.score or 0)))
+    rows = ""
+    for i, r in enumerate(rs, 1):
+        medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}.")
+        rows += f"<tr><td>{medal}</td><td>{r.company or r.filename}</td><td style='color:var(--gold)'>{r.score if r.score is not None else 'N/D'}</td><td>{r.sector or '-'}</td><td><a href='/reports/{r.id}' style='color:var(--teal)'>Apri</a></td></tr>"
+    content = f"<h1>Classifica aziende (migliore → peggiore)</h1><table><tr><th>#</th><th>Azienda</th><th>Score</th><th>Settore</th><th></th></tr>{rows}</table>" if rs else "<h1>Classifica</h1><p>Nessun report salvato.</p>"
+    return render_template_string(BASE_TEMPLATE, title="Classifica", content=content)
+
+@app.route("/guida")
+def guida():
+    items = [
+        ("Score AUGET", "Sintesi da 0 a 100 della qualita aziendale: redditivita, solidita, cassa e valutazione pesate insieme."),
+        ("Valore intrinseco per azione", "Quanto vale un'azione secondo il flusso di cassa scontato sugli owner earnings: il riferimento per decidere se comprare."),
+        ("Margine di sicurezza", "Sconto del prezzo di mercato rispetto al valore intrinseco: Buffett vuole almeno il 20-30% di sconto."),
+        ("Earnings Yield", "Utile per azione diviso prezzo: il rendimento che ottieni comprando oggi, da confrontare con i titoli senza rischio."),
+        ("P/E", "Prezzo diviso utile: quanti anni di utili paghi per ripagare l'acquisto. Sotto 15 e interessante."),
+        ("P/BV", "Prezzo diviso patrimonio per azione: quanto paghi il capitale contabile dell'azienda."),
+        ("ROE", "Utile diviso patrimonio: la redditivita del capitale. Sopra il 12-15% segnala un vantaggio competitivo."),
+        ("ROA", "Utile diviso totale attivo: l'efficienza della banca nell'usare le risorse, depositi inclusi."),
+        ("CET1", "Capitale primario rispetto ai rischi: la solidita patrimoniale della banca. Sopra il 13% e prudenziale."),
+        ("Cost/Income", "Costi operativi diviso ricavi: l'efficienza gestionale. Sotto il 50-55% e ottima."),
+        ("NPL", "Crediti deteriorati sul totale: la qualita del credito. Sotto il 3% la banca e sana."),
+    ]
+    rows = "".join(f"<div class='card'><h2>{k}</h2><p>{v}</p></div>" for k, v in items)
+    content = "<h1>Guida ai criteri</h1><p style='color:var(--muted)'>Il significato di ogni dato usato da AUGET, spiegato semplice.</p>" + rows
+    return render_template_string(BASE_TEMPLATE, title="Guida", content=content)
+
+with app.app_context():
         if not User.query.filter_by(email="demo@demo.com").first():
             d = User(email="demo@demo.com", subscription_tier="demo", subscription_expires=datetime.utcnow()+timedelta(days=3650))
             d.set_password("demo123"); db.session.add(d)
