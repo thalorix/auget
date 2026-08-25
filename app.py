@@ -625,7 +625,16 @@ def _stress_company(m, scenario):
     interest = float(m.get("interest") or 0) or 0.01
     cassa = float(m.get("cassa") or 0)
     equity = float(m.get("equity") or 1)
-    margin = ebit / rev if rev else 0
+    
+    # Se mancano dati critici, usa stime basate su metriche disponibili
+    if not rev and ebit:
+        rev = ebit / 0.15  # stima: margine 15%
+    if not ebit and rev:
+        ebit = rev * 0.15
+    if not fcf and ebit:
+        fcf = ebit * 0.7  # stima: FCF = 70% EBIT
+    
+    margin = ebit / rev if rev else 0.15
     
     # Catena causale: PIL -> consumi -> ricavi (con pricing power su inflazione)
     rev_shock = sc["gdp"] * sens["rev"] / 100
@@ -674,11 +683,10 @@ def _stress_company(m, scenario):
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
-    rs = [r for r in Report.query.filter_by(user_id=current_user.id).all()
-          if _get_metric(r, "revenue") and _get_metric(r, "shares")]
+    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
     if not rs:
         return render_template_string(BASE_TEMPLATE, title="Simula",
-            content="<div class='card'><h1>Financial Intelligence Engine</h1><p>Analizza prima un report (servono ricavi e numero azioni). Carica un bilancio dopo il deploy per includere i dati extra.</p></div>")
+            content="<div class='card'><h1>Financial Intelligence Engine</h1><p>Nessun report salvato. Carica un bilancio per iniziare.</p></div>")
     rid = request.form.get("rid") or str(rs[0].id)
     rep = next((r for r in rs if str(r.id) == str(rid)), rs[0])
     m = _json.loads(rep.metrics_json or "{}")
@@ -704,9 +712,19 @@ def simula():
     # Resilience Score complessivo
     res_color = "var(--teal)" if w_res >= 70 else ("var(--gold)" if w_res >= 45 else "#da3633")
     
-    opts = "".join(f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename} ({r.sector or 'Altro'})</option>" for r in rs)
+    opts = ""
+    for r in rs:
+        m_data = _json.loads(r.metrics_json or "{}")
+        has_data = bool(m_data.get("revenue") and m_data.get("shares"))
+        marker = "" if has_data else " ⚠️"
+        opts += f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename} ({r.sector or 'Altro'}){marker}</option>"
+    
+    m_data = _json.loads(rep.metrics_json or "{}")
+    missing_data = not (m_data.get("revenue") and m_data.get("shares"))
+    warning = "<div class='alert error' style='margin-bottom:1rem'>⚠️ Questo report ha dati incompleti (mancano ricavi o numero azioni). I risultati sono basati su stime. Per analisi precise, ricarica il bilancio.</div>" if missing_data else ""
     
     content = f"""<div class='card'><h1>Financial Intelligence Engine</h1>
+    {warning}
     <p style='color:var(--muted)'>Stress test multi-scenario su <strong>{rep.company or rep.filename}</strong> (settore: {rep.sector or 'Altro'})</p>
     <form method='post'><select name='rid'>{opts}</select>
       <button type='submit' class='btn2' style='width:auto;margin-left:8px'>Ricalcola</button></form></div>
