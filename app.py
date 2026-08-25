@@ -524,6 +524,24 @@ def _sim_dcf(oe, g, r, years=10, tg=0.02):
     iv += cf * (1 + tg) / (r - tg) / (1 + r) ** years
     return iv
 
+
+def _fmtv(x):
+    """Formatta valore numerico"""
+    try:
+        return f"{float(x):.1f}" if x is not None else "N/D"
+    except Exception:
+        return "N/D"
+
+def _get_metric(report_obj, key):
+    """Estrae metrica dal metrics_json del report"""
+    if key == "score":
+        return report_obj.score
+    try:
+        data = _json.loads(report_obj.metrics_json or "{}")
+        return data.get(key)
+    except Exception:
+        return None
+
 # ===== FINANCIAL INTELLIGENCE ENGINE =====
 
 # Matrice di shock per settore (moltiplicatori su variabili macro)
