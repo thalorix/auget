@@ -573,36 +573,62 @@ def _get_metric(report_obj, key):
     except Exception:
         return None
 
+
 # ===== FINANCIAL INTELLIGENCE ENGINE =====
 
-# Matrice di shock per settore (moltiplicatori su variabili macro)
-# Format: {scenario: {variabile: shock_%}}
+# LIVELLO 1: Scenari Macro con shock specifici
 MACRO_SCENARIOS = {
-    "Soft landing": {"prob": 0.35, "gdp": -0.5, "infl": -0.8, "rates": -0.5, "spread": 0.0, "energy": 0.0, "unemp": 0.2},
-    "Boom economico": {"prob": 0.08, "gdp": 2.5, "infl": 0.5, "rates": 0.5, "spread": -0.3, "energy": 0.3, "unemp": -0.5},
-    "Recessione moderata": {"prob": 0.28, "gdp": -2.0, "infl": -1.0, "rates": -1.0, "spread": 1.5, "energy": -0.5, "unemp": 1.5},
-    "Recessione severa": {"prob": 0.12, "gdp": -5.0, "infl": -1.5, "rates": -2.0, "spread": 3.5, "energy": -1.0, "unemp": 3.0},
-    "Stagflazione": {"prob": 0.10, "gdp": -2.0, "infl": 3.0, "rates": 2.0, "spread": 2.0, "energy": 2.0, "unemp": 1.5},
-    "Crisi finanziaria": {"prob": 0.07, "gdp": -4.0, "infl": -0.5, "rates": 1.5, "spread": 5.0, "energy": 0.0, "unemp": 2.5},
+    "Soft landing": {
+        "prob": 0.35,
+        "gdp": -0.5, "infl": -0.8, "rates": -0.5, "unemp": 0.2,
+        "consumption": -0.3, "energy": 0.0, "spread": 0.0,
+        "desc": "PIL stabile, inflazione in calo, tassi in riduzione graduale"
+    },
+    "Boom economico": {
+        "prob": 0.08,
+        "gdp": 2.5, "infl": 0.5, "rates": 0.5, "unemp": -0.5,
+        "consumption": 2.0, "energy": 0.3, "spread": -0.3,
+        "desc": "Crescita forte, consumi in aumento, ottimismo"
+    },
+    "Recessione moderata": {
+        "prob": 0.28,
+        "gdp": -2.0, "infl": -1.0, "rates": -1.0, "unemp": 1.5,
+        "consumption": -2.0, "energy": -0.5, "spread": 1.5,
+        "desc": "PIL in calo, disoccupazione in aumento, consumi deboli"
+    },
+    "Recessione severa": {
+        "prob": 0.12,
+        "gdp": -5.0, "infl": -1.5, "rates": -2.0, "unemp": 3.0,
+        "consumption": -5.0, "energy": -1.0, "spread": 3.5,
+        "desc": "Crisi profonda, crollo consumi, liquidità scarsa"
+    },
+    "Stagflazione": {
+        "prob": 0.10,
+        "gdp": -2.0, "infl": 3.0, "rates": 2.0, "unemp": 1.5,
+        "consumption": -3.0, "energy": 2.0, "spread": 2.0,
+        "desc": "Inflazione alta con PIL in calo, tassi in aumento"
+    },
+    "Crisi finanziaria": {
+        "prob": 0.07,
+        "gdp": -4.0, "infl": -0.5, "rates": 1.5, "unemp": 2.5,
+        "consumption": -4.0, "energy": 0.0, "spread": 5.0,
+        "desc": "Spread in esplosione, costo debito altissimo, mercato azionario in crollo"
+    },
 }
 
-# Sensibilità settoriale (moltiplicatori dello shock su ricavi e margini)
-# revenue_sens: quanto calano i ricavi per 1% di PIL giù
-# pricing_power: capacità di alzare prezzi con inflazione (0-1)
-# rate_sens: sensibilità ai tassi (1 = banca beneficia, 0 = tech soffre)
-# energy_sens: sensibilità al costo energia
+# LIVELLO 2: Matrice sensibilità settoriale
 SECTOR_SENS = {
-    "Banca":       {"rev": 0.8, "pp": 0.2, "rate": 1.0, "energy": 0.3, "margin_adj": -0.02},
-    "Tech":        {"rev": 1.2, "pp": 0.6, "rate": -0.8, "energy": 0.4, "margin_adj": -0.03},
-    "Retail":      {"rev": 1.8, "pp": 0.3, "rate": -0.5, "energy": 0.5, "margin_adj": -0.04},
-    "Consumer":    {"rev": 0.6, "pp": 0.8, "rate": -0.2, "energy": 0.6, "margin_adj": -0.01},
-    "Pharma":      {"rev": 0.5, "pp": 0.9, "rate": -0.3, "energy": 0.3, "margin_adj": -0.01},
-    "Utilities":   {"rev": 0.3, "pp": 0.7, "rate": -0.7, "energy": 0.9, "margin_adj": -0.02},
-    "Energy":      {"rev": 0.4, "pp": 0.8, "rate": -0.2, "energy": -1.5, "margin_adj": 0.01},
-    "Auto":        {"rev": 2.0, "pp": 0.2, "rate": -0.9, "energy": 0.7, "margin_adj": -0.05},
-    "Industria":   {"rev": 1.5, "pp": 0.4, "rate": -0.5, "energy": 0.8, "margin_adj": -0.03},
-    "Immobiliare": {"rev": 1.3, "pp": 0.3, "rate": -1.0, "energy": 0.6, "margin_adj": -0.04},
-    "Altro":       {"rev": 1.0, "pp": 0.4, "rate": -0.4, "energy": 0.5, "margin_adj": -0.02},
+    "Banca": {"rev_gdp": 0.8, "pricing_power": 0.2, "rate_sens": 1.0, "energy_sens": 0.3, "margin_adj": -0.02},
+    "Tech": {"rev_gdp": 1.2, "pricing_power": 0.6, "rate_sens": -0.8, "energy_sens": 0.4, "margin_adj": -0.03},
+    "Retail": {"rev_gdp": 1.8, "pricing_power": 0.3, "rate_sens": -0.5, "energy_sens": 0.5, "margin_adj": -0.04},
+    "Consumer": {"rev_gdp": 0.6, "pricing_power": 0.8, "rate_sens": -0.2, "energy_sens": 0.6, "margin_adj": -0.01},
+    "Pharma": {"rev_gdp": 0.5, "pricing_power": 0.9, "rate_sens": -0.3, "energy_sens": 0.3, "margin_adj": -0.01},
+    "Utilities": {"rev_gdp": 0.3, "pricing_power": 0.7, "rate_sens": -0.7, "energy_sens": 0.9, "margin_adj": -0.02},
+    "Energy": {"rev_gdp": 0.4, "pricing_power": 0.8, "rate_sens": -0.2, "energy_sens": -1.5, "margin_adj": 0.01},
+    "Auto": {"rev_gdp": 2.0, "pricing_power": 0.2, "rate_sens": -0.9, "energy_sens": 0.7, "margin_adj": -0.05},
+    "Industria": {"rev_gdp": 1.5, "pricing_power": 0.4, "rate_sens": -0.5, "energy_sens": 0.8, "margin_adj": -0.03},
+    "Immobiliare": {"rev_gdp": 1.3, "pricing_power": 0.3, "rate_sens": -1.0, "energy_sens": 0.6, "margin_adj": -0.04},
+    "Altro": {"rev_gdp": 1.0, "pricing_power": 0.4, "rate_sens": -0.4, "energy_sens": 0.5, "margin_adj": -0.02},
 }
 
 def _get_sector_sens(sector):
@@ -612,12 +638,13 @@ def _get_sector_sens(sector):
             return v
     return SECTOR_SENS["Altro"]
 
+# LIVELLO 3+4: Stress test con catena causale
 def _stress_company(m, scenario):
-    """Applica shock macro all'azienda tramite la catena causale settore"""
     sector = (m.get("sector") or "Altro")
     sens = _get_sector_sens(sector)
     sc = MACRO_SCENARIOS[scenario]
     
+    # Dati aziendali (con fallback a stime)
     rev = float(m.get("revenue") or 0)
     ebit = float(m.get("ebit") or 0)
     fcf = float(m.get("fcf") or m.get("oe") or 0)
@@ -626,75 +653,123 @@ def _stress_company(m, scenario):
     cassa = float(m.get("cassa") or 0)
     equity = float(m.get("equity") or 1)
     
-    # Se mancano dati critici, usa stime basate su metriche disponibili
+    # Stime se mancano dati
     if not rev and ebit:
-        rev = ebit / 0.15  # stima: margine 15%
+        rev = ebit / 0.15
     if not ebit and rev:
         ebit = rev * 0.15
     if not fcf and ebit:
-        fcf = ebit * 0.7  # stima: FCF = 70% EBIT
+        fcf = ebit * 0.7
     
     margin = ebit / rev if rev else 0.15
     
-    # Catena causale: PIL -> consumi -> ricavi (con pricing power su inflazione)
-    rev_shock = sc["gdp"] * sens["rev"] / 100
-    price_shock = sc["infl"] * sens["pp"] / 100  # pricing power
-    new_rev = rev * (1 + rev_shock + price_shock)
+    # CATENA CAUSALE: Macro → Settore → Azienda
     
-    # Margini: peggiorano in crisi, migliorano in boom
-    new_margin = margin + sens["margin_adj"] * (1 + abs(sc["gdp"]) / 5)
-    if new_margin < 0: new_margin = margin * 0.5
+    # 1. Shock PIL → consumi → volumi → ricavi
+    vol_shock = sc["gdp"] * sens["rev_gdp"] / 100
+    
+    # 2. Pricing power compensa inflazione
+    price_shock = sc["infl"] * sens["pricing_power"] / 100
+    
+    # 3. Ricavi finali
+    rev_shock = vol_shock + price_shock
+    new_rev = rev * (1 + rev_shock)
+    
+    # 4. Margini: peggiorano in crisi, migliorano in boom
+    margin_shock = sens["margin_adj"] * (1 + abs(sc["gdp"]) / 5)
+    new_margin = max(margin + margin_shock, 0.02)
     new_ebit = new_rev * new_margin
     
-    # Interessi: aumentano con spread e tassi
+    # 5. Interessi: aumentano con spread e tassi
     int_mult = 1 + (sc["rates"] + sc["spread"] * 0.3) / 100
     new_interest = interest * max(int_mult, 0.3)
     
-    # FCF: segue EBIT con leverage operativo
+    # 6. FCF: segue EBIT con leverage operativo
     ebit_ratio = new_ebit / ebit if ebit else 1
     new_fcf = fcf * max(ebit_ratio, 0.2)
     
-    # Indicatori finanziari
+    # 7. Indicatori finanziari
     debt_ebitda = debt / new_ebit if new_ebit > 0 else 99
     int_coverage = new_ebit / new_interest if new_interest > 0 else 99
     cash_runway = cassa / abs(new_fcf) if new_fcf < 0 else 999
     
-    # Distress probability (euristica)
+    # 8. Probabilità di distress (4 fattori)
     distress = 0
     if debt_ebitda > 4: distress += 0.25
     if int_coverage < 2: distress += 0.30
     if new_fcf < 0 and cassa < abs(new_fcf): distress += 0.35
     if cash_runway < 1: distress += 0.10
     
-    # Resilience specifica per scenario (0-100)
+    # 9. Resilience Score (0-100)
     resilience = 100 - distress * 100
     if new_fcf > 0 and debt_ebitda < 3: resilience = min(100, resilience + 10)
     if cassa > debt * 0.3: resilience = min(100, resilience + 8)
     if margin > 0.15: resilience = min(100, resilience + 5)
     
     return {
-        "rev_chg": (rev_shock + price_shock) * 100,
-        "new_rev": new_rev, "new_ebit": new_ebit, "new_fcf": new_fcf,
-        "debt_ebitda": debt_ebitda, "int_cov": int_coverage,
-        "distress": distress, "resilience": max(0, min(100, resilience)),
-        "dividendo_ok": new_fcf > 0 and (m.get("payout") or 0) < 0.8,
+        "rev_chg": rev_shock * 100,
+        "ebitda_chg": (new_ebit - ebit) / ebit * 100 if ebit else 0,
+        "fcf_chg": (new_fcf - fcf) / fcf * 100 if fcf else 0,
+        "debt_ebitda": debt_ebitda,
+        "int_cov": int_coverage,
+        "dividendo_ok": new_fcf > 0,
+        "liquidity": "Adeguata" if cash_runway > 2 else ("Tesa" if cash_runway > 1 else "Critica"),
+        "distress_prob": distress,
+        "resilience": max(0, min(100, resilience)),
     }
 
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
     rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
-    if not rs:
+    
+    if request.method == "POST":
+        # Upload nuovo report o selezione esistente
+        if "report_file" in request.files:
+            f = request.files["report_file"]
+            if f and f.filename:
+                path = os.path.join(app.config["UPLOAD_FOLDER"], f.filename)
+                f.save(path)
+                try:
+                    res = engine.analyze_document(path)
+                    html_path = engine.export_html(res)
+                    html = open(html_path, encoding="utf-8").read()
+                    sel = {"score": res.get("scores", {}).get("total")}
+                    for m in res.get("quant", []):
+                        if m.code in ("Q08", "Q09", "Q16", "Q18", "Q32", "Q34", "B1", "B2", "B4", "B5"):
+                            sel[m.code] = m.value
+                    _D = res.get("D", {})
+                    sel.update({"oe": _D.get("oe") or _D.get("fcf"), "fcf": _D.get("fcf"),
+                                "shares": _D.get("shares"), "price": _D.get("price"),
+                                "revenue": _D.get("revenue"), "ebit": _D.get("ebit"),
+                                "interest": _D.get("interest"), "total_debt": _D.get("total_debt"),
+                                "cassa": _D.get("cassa"), "equity": _D.get("equity")})
+                    rep = Report(user_id=current_user.id, filename=f.filename,
+                                 company=res.get("company", ""), score=sel["score"],
+                                 html=html, metrics_json=_json.dumps(sel))
+                    db.session.add(rep); db.session.commit()
+                    rs.insert(0, rep)
+                except Exception as e:
+                    flash(f"Errore analisi: {str(e)}", "error")
+        
+        rid = request.form.get("rid")
+        if rid:
+            rep = next((r for r in rs if str(r.id) == str(rid)), rs[0] if rs else None)
+        else:
+            rep = rs[0] if rs else None
+    else:
+        rep = rs[0] if rs else None
+    
+    if not rep:
         return render_template_string(BASE_TEMPLATE, title="Simula",
-            content="<div class='card'><h1>Financial Intelligence Engine</h1><p>Nessun report salvato. Carica un bilancio per iniziare.</p></div>")
-    rid = request.form.get("rid") or str(rs[0].id)
-    rep = next((r for r in rs if str(r.id) == str(rid)), rs[0])
+            content="<div class='card'><h1>Financial Intelligence Engine</h1><p>Nessun report disponibile. Carica un bilancio per iniziare lo stress test.</p></div>")
+    
     m = _json.loads(rep.metrics_json or "{}")
     m["sector"] = rep.sector or "Altro"
     
     # Calcola tutti gli scenari
     rows = ""
-    exp_val = 0; w_res = 0
+    exp_impact = 0; w_res = 0
     for name, sc in MACRO_SCENARIOS.items():
         r = _stress_company(m, name)
         color = "var(--teal)" if r["resilience"] >= 70 else ("var(--gold)" if r["resilience"] >= 45 else "#da3633")
@@ -702,49 +777,45 @@ def simula():
         div_txt = "✓" if r["dividendo_ok"] else "⚠"
         rows += f"<tr><td>{icon} {name}</td><td>{sc['prob']*100:.0f}%</td>"
         rows += f"<td>{r['rev_chg']:+.1f}%</td>"
+        rows += f"<td>{r['ebitda_chg']:+.1f}%</td>"
+        rows += f"<td>{r['fcf_chg']:+.1f}%</td>"
         rows += f"<td>{r['debt_ebitda']:.1f}x</td>"
         rows += f"<td>{r['int_cov']:.1f}x</td>"
         rows += f"<td>{div_txt}</td>"
+        rows += f"<td>{r['liquidity']}</td>"
         rows += f"<td style='color:{color};font-weight:700'>{r['resilience']:.0f}</td></tr>"
-        exp_val += r["rev_chg"] * sc["prob"]
+        exp_impact += r["rev_chg"] * sc["prob"]
         w_res += r["resilience"] * sc["prob"]
     
-    # Resilience Score complessivo
     res_color = "var(--teal)" if w_res >= 70 else ("var(--gold)" if w_res >= 45 else "#da3633")
     
-    opts = ""
-    for r in rs:
-        m_data = _json.loads(r.metrics_json or "{}")
-        has_data = bool(m_data.get("revenue") and m_data.get("shares"))
-        marker = "" if has_data else " ⚠️"
-        opts += f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename} ({r.sector or 'Altro'}){marker}</option>"
-    
-    m_data = _json.loads(rep.metrics_json or "{}")
-    missing_data = not (m_data.get("revenue") and m_data.get("shares"))
-    warning = "<div class='alert error' style='margin-bottom:1rem'>⚠️ Questo report ha dati incompleti (mancano ricavi o numero azioni). I risultati sono basati su stime. Per analisi precise, ricarica il bilancio.</div>" if missing_data else ""
+    opts = "".join(f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename} ({r.sector or 'Altro'})</option>" for r in rs)
     
     content = f"""<div class='card'><h1>Financial Intelligence Engine</h1>
-    {warning}
-    <p style='color:var(--muted)'>Stress test multi-scenario su <strong>{rep.company or rep.filename}</strong> (settore: {rep.sector or 'Altro'})</p>
-    <form method='post'><select name='rid'>{opts}</select>
-      <button type='submit' class='btn2' style='width:auto;margin-left:8px'>Ricalcola</button></form></div>
+    <p style='color:var(--muted)'>Stress test multi-scenario con catena causale Macro → Settore → Azienda</p>
+    <form method='post' enctype='multipart/form-data'>
+      <select name='rid'>{opts}</select>
+      <input type='file' name='report_file' accept='.pdf,.docx,.txt'>
+      <button type='submit' class='btn2' style='width:auto;margin-left:8px'>Carica o seleziona</button>
+    </form></div>
     
     <div class='card' style='text-align:center;border:2px solid {res_color}'>
       <h2 style='color:{res_color}'>Resilience Score: {w_res:.0f}/100</h2>
-      <p>Expected Scenario Value: <strong>{exp_val:+.1f}%</strong> ricavi attesi (media ponderata)</p>
-      <p style='color:var(--muted);font-size:.9rem'>Probabilita di sopravvivere a 6 scenari macro (soft landing, boom, recessioni, stagflazione, crisi finanziaria) mantenendo FCF positivo e debito sostenibile.</p>
+      <p>Expected Impact: <strong>{exp_impact:+.1f}%</strong> ricavi (media ponderata)</p>
+      <p style='color:var(--muted);font-size:.9rem'>Probabilità di sopravvivere a 6 scenari macro mantenendo FCF positivo e debito sostenibile</p>
     </div>
     
     <div class='card'><h2>Matrice scenari</h2>
-    <table><tr><th>Scenario</th><th>Prob.</th><th>Ricavi</th><th>Debt/EBITDA</th><th>Int.Cov.</th><th>Div.</th><th>Resilienza</th></tr>
+    <table><tr><th>Scenario</th><th>Prob.</th><th>Ricavi</th><th>EBITDA</th><th>FCF</th><th>Debt/EBITDA</th><th>Int.Cov.</th><th>Div.</th><th>Liquidità</th><th>Resilienza</th></tr>
     {rows}</table></div>
     
     <div class='card'><h2>Come funziona</h2>
     <p style='color:var(--muted);font-size:.9rem'>
-    <strong>Livello 1 — Macro:</strong> shock su PIL, inflazione, tassi, spread, energia, disoccupazione.<br>
-    <strong>Livello 2 — Settore:</strong> moltiplicatori specifici (banche beneficiano di tassi alti, tech soffre, consumer staples resilienti).<br>
+    <strong>Livello 1 — Macro:</strong> shock su PIL, inflazione, tassi, disoccupazione, consumi, energia, spread.<br>
+    <strong>Livello 2 — Settore:</strong> sensibilità specifica (banche beneficiano di tassi alti, tech soffre, consumer resilienti).<br>
     <strong>Livello 3 — Azienda:</strong> pricing power, margini, leverage, copertura interessi.<br>
-    <strong>Livello 4 — Output:</strong> bilancio futuro + probabilita di distress + resilienza specifica.</p></div>"""
+    <strong>Livello 4 — Output:</strong> bilancio futuro + probabilità distress + resilienza.<br>
+    <strong>Resilience Score:</strong> quanto è probabile che l'azienda sopravviva e continui a generare FCF durante una crisi.</p></div>"""
     return render_template_string(BASE_TEMPLATE, title="Simula", content=content)
 
 @app.route("/account", methods=["GET", "POST"])
