@@ -165,6 +165,7 @@ class Report(db.Model):
     metrics_json = db.Column(db.Text)
     notes = db.Column(db.Text)
     sector = db.Column(db.String(80))
+    is_favorite = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class WatchItem(db.Model):
@@ -488,7 +489,37 @@ def report_view(rid):
     r = Report.query.get_or_404(rid)
     if r.user_id != current_user.id and current_user.subscription_tier not in ("demo", "admin"):
         return ("non autorizzato", 403)
-    return (r.html, 200, {"Content-Type": "text/html; charset=utf-8"})
+    
+    # Calcolo navigazione
+    all_reports = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
+    idx = next((i for i, rep in enumerate(all_reports) if rep.id == rid), -1)
+    prev_rep = all_reports[idx - 1] if idx > 0 else None
+    next_rep = all_reports[idx + 1] if idx >= 0 and idx < len(all_reports) - 1 else None
+    
+    # Toggle favorite
+    if request.method == "POST":
+        r.is_favorite = not r.is_favorite
+        db.session.commit()
+        return redirect(f"/reports/{rid}")
+    
+    # HTML del report con navigazione
+    nav_html = f"""
+    <div style="background:var(--card);border-bottom:1px solid var(--line);padding:1rem;margin:-2rem -2rem 2rem -2rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+      <div style="display:flex;gap:0.5rem;align-items:center">
+        <a href="/reports" style="background:var(--teal);color:#0b1220;padding:0.5rem 1rem;border-radius:8px;text-decoration:none;font-weight:600">← Tutti i report</a>
+        {f'<a href="/reports/{prev_rep.id}" style="background:#233250;color:var(--text);padding:0.5rem 1rem;border-radius:8px;text-decoration:none;font-weight:600" title="{prev_rep.company or prev_rep.filename}">← Prec</a>' if prev_rep else '<span style="opacity:0.3;padding:0.5rem 1rem">← Prec</span>'}
+        {f'<a href="/reports/{next_rep.id}" style="background:#233250;color:var(--text);padding:0.5rem 1rem;border-radius:8px;text-decoration:none;font-weight:600" title="{next_rep.company or next_rep.filename}">Succ →</a>' if next_rep else '<span style="opacity:0.3;padding:0.5rem 1rem">Succ →</span>'}
+      </div>
+      <form method="post" style="margin:0">
+        <button type="submit" style="width:auto;padding:0.5rem 1rem;background:{'var(--gold)' if r.is_favorite else '#233250'};color:{'#0b1220' if r.is_favorite else 'var(--text)'};border-radius:8px;font-weight:600">
+          {'★ Rimuovi dai preferiti' if r.is_favorite else '☆ Aggiungi ai preferiti'}
+        </button>
+      </form>
+    </div>
+    """
+    
+    html_content = r.html.replace('<div class="card">', nav_html + '<div class="card">', 1)
+    return (html_content, 200, {"Content-Type": "text/html; charset=utf-8"})
 
 @app.route("/reports/<int:rid>/edit", methods=["POST"])
 @login_required
