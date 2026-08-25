@@ -176,6 +176,15 @@ class WatchItem(db.Model):
     note = db.Column(db.String(300))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class SimulazioneConfig(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    name = db.Column(db.String(120))
+    scenario_data = db.Column(db.Text)  # JSON con parametri macro
+    sector_sens = db.Column(db.Text)    # JSON con sensibilità settoriali
+    is_default = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 class SiteConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     site_open = db.Column(db.Boolean, default=True)
@@ -576,6 +585,92 @@ def _get_metric(report_obj, key):
 
 # ===== FINANCIAL INTELLIGENCE ENGINE =====
 
+def get_default_macro_scenarios():
+    """Valori di esempio per i 6 scenari macro - modificabili dall'utente"""
+    return {
+        "Soft landing": {
+            "prob": 0.35,
+            "gdp": -0.5, "infl": -0.8, "rates": -0.5, "unemp": 0.2,
+            "consumption": -0.3, "energy": 0.0, "spread": 0.0,
+            "desc": "PIL stabile, inflazione in calo, tassi in riduzione graduale"
+        },
+        "Boom economico": {
+            "prob": 0.08,
+            "gdp": 2.5, "infl": 0.5, "rates": 0.5, "unemp": -0.5,
+            "consumption": 2.0, "energy": 0.3, "spread": -0.3,
+            "desc": "Crescita forte, consumi in aumento"
+        },
+        "Recessione moderata": {
+            "prob": 0.28,
+            "gdp": -2.0, "infl": -1.0, "rates": -1.0, "unemp": 1.5,
+            "consumption": -2.0, "energy": -0.5, "spread": 1.5,
+            "desc": "PIL in calo moderato, disoccupazione in aumento"
+        },
+        "Recessione severa": {
+            "prob": 0.12,
+            "gdp": -5.0, "infl": -1.5, "rates": -2.0, "unemp": 3.0,
+            "consumption": -5.0, "energy": -1.0, "spread": 3.5,
+            "desc": "Crisi profonda, crollo consumi"
+        },
+        "Stagflazione": {
+            "prob": 0.10,
+            "gdp": -2.0, "infl": 3.0, "rates": 2.0, "unemp": 1.5,
+            "consumption": -3.0, "energy": 2.0, "spread": 2.0,
+            "desc": "Inflazione alta con PIL in calo"
+        },
+        "Crisi finanziaria": {
+            "prob": 0.07,
+            "gdp": -4.0, "infl": -0.5, "rates": 1.5, "unemp": 2.5,
+            "consumption": -4.0, "energy": 0.0, "spread": 5.0,
+            "desc": "Spread in esplosione, costo debito altissimo"
+        },
+    }
+
+def get_default_sector_sens():
+    """Sensibilità settoriali di esempio - modificabili"""
+    return {
+        "Banca": {"rev_gdp": 0.8, "pricing_power": 0.2, "rate_sens": 1.0, "energy_sens": 0.3, "margin_adj": -0.02},
+        "Tech": {"rev_gdp": 1.2, "pricing_power": 0.6, "rate_sens": -0.8, "energy_sens": 0.4, "margin_adj": -0.03},
+        "Retail": {"rev_gdp": 1.8, "pricing_power": 0.3, "rate_sens": -0.5, "energy_sens": 0.5, "margin_adj": -0.04},
+        "Consumer": {"rev_gdp": 0.6, "pricing_power": 0.8, "rate_sens": -0.2, "energy_sens": 0.6, "margin_adj": -0.01},
+        "Pharma": {"rev_gdp": 0.5, "pricing_power": 0.9, "rate_sens": -0.3, "energy_sens": 0.3, "margin_adj": -0.01},
+        "Utilities": {"rev_gdp": 0.3, "pricing_power": 0.7, "rate_sens": -0.7, "energy_sens": 0.9, "margin_adj": -0.02},
+        "Energy": {"rev_gdp": 0.4, "pricing_power": 0.8, "rate_sens": -0.2, "energy_sens": -1.5, "margin_adj": 0.01},
+        "Auto": {"rev_gdp": 2.0, "pricing_power": 0.2, "rate_sens": -0.9, "energy_sens": 0.7, "margin_adj": -0.05},
+        "Industria": {"rev_gdp": 1.5, "pricing_power": 0.4, "rate_sens": -0.5, "energy_sens": 0.8, "margin_adj": -0.03},
+        "Immobiliare": {"rev_gdp": 1.3, "pricing_power": 0.3, "rate_sens": -1.0, "energy_sens": 0.6, "margin_adj": -0.04},
+        "Altro": {"rev_gdp": 1.0, "pricing_power": 0.4, "rate_sens": -0.4, "energy_sens": 0.5, "margin_adj": -0.02},
+    }
+
+def load_simulazione_config(user_id):
+    """Carica configurazione personalizzata o usa default"""
+    cfg = SimulazioneConfig.query.filter_by(user_id=user_id, is_default=True).first()
+    if cfg:
+        import json
+        return _json.loads(cfg.scenario_data), _json.loads(cfg.sector_sens)
+    return get_default_macro_scenarios(), get_default_sector_sens()
+
+def save_simulazione_config(user_id, scenarios, sector_sens, name="Default"):
+    """Salva configurazione personalizzata"""
+    import json
+    cfg = SimulazioneConfig.query.filter_by(user_id=user_id, is_default=True).first()
+    if not cfg:
+        cfg = SimulazioneConfig(user_id=user_id, name=name, is_default=True)
+        db.session.add(cfg)
+    cfg.scenario_data = _json.dumps(scenarios)
+    cfg.sector_sens = _json.dumps(sector_sens)
+    db.session.commit()
+    return cfg
+
+def _get_sector_sens_custom(sector, sector_sens):
+    s = (sector or "").strip()
+    for k, v in sector_sens.items():
+        if k.lower() in s.lower():
+            return v
+    return sector_sens.get("Altro", sector_sens)
+
+
+
 # LIVELLO 1: Scenari Macro con shock specifici
 MACRO_SCENARIOS = {
     "Soft landing": {
@@ -639,10 +734,15 @@ def _get_sector_sens(sector):
     return SECTOR_SENS["Altro"]
 
 # LIVELLO 3+4: Stress test con catena causale
-def _stress_company(m, scenario):
+def _stress_company(m, scenario, macro_scenarios=None, sector_sens=None):
+    if macro_scenarios is None:
+        macro_scenarios = get_default_macro_scenarios()
+    if sector_sens is None:
+        sector_sens = get_default_sector_sens()
+    
     sector = (m.get("sector") or "Altro")
-    sens = _get_sector_sens(sector)
-    sc = MACRO_SCENARIOS[scenario]
+    sens = _get_sector_sens_custom(sector, sector_sens)
+    sc = macro_scenarios[scenario]
     
     # Dati aziendali (con fallback a stime)
     rev = float(m.get("revenue") or 0)
@@ -723,7 +823,34 @@ def _stress_company(m, scenario):
 def simula():
     rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
     
+    # Carica configurazioni personalizzate o default
+    macro_scenarios, sector_sens = load_simulazione_config(current_user.id)
+    
     if request.method == "POST":
+        # Salva configurazione personalizzata
+        if "save_config" in request.form:
+            # Aggiorna macro scenarios dai form
+            for scenario_name in macro_scenarios.keys():
+                for param in ["gdp", "infl", "rates", "unemp", "consumption", "energy", "spread", "prob"]:
+                    val = request.form.get(f"{scenario_name}_{param}")
+                    if val is not None:
+                        try:
+                            macro_scenarios[scenario_name][param] = float(val) / 100 if param == "prob" else float(val)
+                        except:
+                            pass
+            # Aggiorna sector sens dai form
+            for sector_name in sector_sens.keys():
+                for param in ["rev_gdp", "pricing_power", "rate_sens", "energy_sens", "margin_adj"]:
+                    val = request.form.get(f"{sector_name}_{param}")
+                    if val is not None:
+                        try:
+                            sector_sens[sector_name][param] = float(val)
+                        except:
+                            pass
+            save_simulazione_config(current_user.id, macro_scenarios, sector_sens)
+            flash("Configurazione salvata!", "success")
+            return redirect("/simula")
+        
         # Upload nuovo report o selezione esistente
         if "report_file" in request.files:
             f = request.files["report_file"]
@@ -770,8 +897,8 @@ def simula():
     # Calcola tutti gli scenari
     rows = ""
     exp_impact = 0; w_res = 0
-    for name, sc in MACRO_SCENARIOS.items():
-        r = _stress_company(m, name)
+    for name, sc in macro_scenarios.items():
+        r = _stress_company(m, name, macro_scenarios, sector_sens)
         color = "var(--teal)" if r["resilience"] >= 70 else ("var(--gold)" if r["resilience"] >= 45 else "#da3633")
         icon = "🟢" if r["resilience"] >= 70 else ("🟡" if r["resilience"] >= 45 else "🔴")
         div_txt = "✓" if r["dividendo_ok"] else "⚠"
@@ -791,6 +918,37 @@ def simula():
     
     opts = "".join(f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename} ({r.sector or 'Altro'})</option>" for r in rs)
     
+    # Costruisco form configurazione
+    config_html = """<div class='card'><h2>Configurazione Parametri (LIVELLO 1 e 2)</h2>
+    <form method='post'><input type='hidden' name='save_config' value='1'>
+    <h3 style='color:var(--gold)'>LIVELLO 1: Scenari Macro</h3>
+    <table><tr><th>Scenario</th><th>Prob %</th><th>PIL %</th><th>Infl %</th><th>Tassi %</th><th>Disocc %</th><th>Consumi %</th><th>Energia %</th><th>Spread</th></tr>"""
+    for name, sc in macro_scenarios.items():
+        config_html += f"""<tr><td><strong>{name}</strong></td>
+        <td><input name='{name}_prob' value='{sc.get("prob", 0)*100:.0f}' style='width:60px'></td>
+        <td><input name='{name}_gdp' value='{sc.get("gdp", 0):.1f}' style='width:60px'></td>
+        <td><input name='{name}_infl' value='{sc.get("infl", 0):.1f}' style='width:60px'></td>
+        <td><input name='{name}_rates' value='{sc.get("rates", 0):.1f}' style='width:60px'></td>
+        <td><input name='{name}_unemp' value='{sc.get("unemp", 0):.1f}' style='width:60px'></td>
+        <td><input name='{name}_consumption' value='{sc.get("consumption", 0):.1f}' style='width:60px'></td>
+        <td><input name='{name}_energy' value='{sc.get("energy", 0):.1f}' style='width:60px'></td>
+        <td><input name='{name}_spread' value='{sc.get("spread", 0):.1f}' style='width:60px'></td>
+        </tr>"""
+    config_html += """</table>
+    <h3 style='color:var(--gold);margin-top:1.5rem'>LIVELLO 2: Sensibilità Settoriali</h3>
+    <table><tr><th>Settore</th><th>Sens PIL</th><th>Pricing Power</th><th>Sens Tassi</th><th>Sens Energia</th><th>Adj Margine</th></tr>"""
+    for sector, sens in sector_sens.items():
+        config_html += f"""<tr><td><strong>{sector}</strong></td>
+        <td><input name='{sector}_rev_gdp' value='{sens.get("rev_gdp", 1):.1f}' style='width:60px'></td>
+        <td><input name='{sector}_pricing_power' value='{sens.get("pricing_power", 0.5):.1f}' style='width:60px'></td>
+        <td><input name='{sector}_rate_sens' value='{sens.get("rate_sens", -0.4):.1f}' style='width:60px'></td>
+        <td><input name='{sector}_energy_sens' value='{sens.get("energy_sens", 0.5):.1f}' style='width:60px'></td>
+        <td><input name='{sector}_margin_adj' value='{sens.get("margin_adj", -0.02):.2f}' style='width:60px'></td>
+        </tr>"""
+    config_html += """</table>
+    <button type='submit' class='btn2' style='margin-top:1rem'>Salva Configurazione Personalizzata</button>
+    </form></div>"""
+    
     content = f"""<div class='card'><h1>Financial Intelligence Engine</h1>
     <p style='color:var(--muted)'>Stress test multi-scenario con catena causale Macro → Settore → Azienda</p>
     <form method='post' enctype='multipart/form-data'>
@@ -798,6 +956,7 @@ def simula():
       <input type='file' name='report_file' accept='.pdf,.docx,.txt'>
       <button type='submit' class='btn2' style='width:auto;margin-left:8px'>Carica o seleziona</button>
     </form></div>
+    {config_html}"""
     
     <div class='card' style='text-align:center;border:2px solid {res_color}'>
       <h2 style='color:{res_color}'>Resilience Score: {w_res:.0f}/100</h2>
