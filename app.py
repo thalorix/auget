@@ -445,7 +445,12 @@ def do_analyze():
                 sel[m.code] = m.value
         _D = res.get("D", {})
         sel.update({"oe": _D.get("oe") or _D.get("fcf"), "fcf": _D.get("fcf"),
-                    "shares": _D.get("shares"), "price": _D.get("price")})
+                    "shares": _D.get("shares"), "price": _D.get("price"),
+                    "revenue": _D.get("revenue"), "ebit": _D.get("ebit"),
+                    "interest": _D.get("interest") or _D.get("interest_expense"),
+                    "total_debt": _D.get("total_debt"), "cassa": _D.get("cassa"),
+                    "equity": _D.get("equity"), "payout": _D.get("payout"),
+                    "capex": _D.get("capex"), "net_income": _D.get("net_income")})
         rep = Report(user_id=current_user.id, filename=f.filename, company=res.get("company", ""),
                      score=sel["score"], html=html, metrics_json=_json.dumps(sel))
         db.session.add(rep); db.session.commit()
@@ -519,136 +524,161 @@ def _sim_dcf(oe, g, r, years=10, tg=0.02):
     iv += cf * (1 + tg) / (r - tg) / (1 + r) ** years
     return iv
 
+# ===== FINANCIAL INTELLIGENCE ENGINE =====
+
+# Matrice di shock per settore (moltiplicatori su variabili macro)
+# Format: {scenario: {variabile: shock_%}}
+MACRO_SCENARIOS = {
+    "Soft landing": {"prob": 0.35, "gdp": -0.5, "infl": -0.8, "rates": -0.5, "spread": 0.0, "energy": 0.0, "unemp": 0.2},
+    "Boom economico": {"prob": 0.08, "gdp": 2.5, "infl": 0.5, "rates": 0.5, "spread": -0.3, "energy": 0.3, "unemp": -0.5},
+    "Recessione moderata": {"prob": 0.28, "gdp": -2.0, "infl": -1.0, "rates": -1.0, "spread": 1.5, "energy": -0.5, "unemp": 1.5},
+    "Recessione severa": {"prob": 0.12, "gdp": -5.0, "infl": -1.5, "rates": -2.0, "spread": 3.5, "energy": -1.0, "unemp": 3.0},
+    "Stagflazione": {"prob": 0.10, "gdp": -2.0, "infl": 3.0, "rates": 2.0, "spread": 2.0, "energy": 2.0, "unemp": 1.5},
+    "Crisi finanziaria": {"prob": 0.07, "gdp": -4.0, "infl": -0.5, "rates": 1.5, "spread": 5.0, "energy": 0.0, "unemp": 2.5},
+}
+
+# Sensibilità settoriale (moltiplicatori dello shock su ricavi e margini)
+# revenue_sens: quanto calano i ricavi per 1% di PIL giù
+# pricing_power: capacità di alzare prezzi con inflazione (0-1)
+# rate_sens: sensibilità ai tassi (1 = banca beneficia, 0 = tech soffre)
+# energy_sens: sensibilità al costo energia
+SECTOR_SENS = {
+    "Banca":       {"rev": 0.8, "pp": 0.2, "rate": 1.0, "energy": 0.3, "margin_adj": -0.02},
+    "Tech":        {"rev": 1.2, "pp": 0.6, "rate": -0.8, "energy": 0.4, "margin_adj": -0.03},
+    "Retail":      {"rev": 1.8, "pp": 0.3, "rate": -0.5, "energy": 0.5, "margin_adj": -0.04},
+    "Consumer":    {"rev": 0.6, "pp": 0.8, "rate": -0.2, "energy": 0.6, "margin_adj": -0.01},
+    "Pharma":      {"rev": 0.5, "pp": 0.9, "rate": -0.3, "energy": 0.3, "margin_adj": -0.01},
+    "Utilities":   {"rev": 0.3, "pp": 0.7, "rate": -0.7, "energy": 0.9, "margin_adj": -0.02},
+    "Energy":      {"rev": 0.4, "pp": 0.8, "rate": -0.2, "energy": -1.5, "margin_adj": 0.01},
+    "Auto":        {"rev": 2.0, "pp": 0.2, "rate": -0.9, "energy": 0.7, "margin_adj": -0.05},
+    "Industria":   {"rev": 1.5, "pp": 0.4, "rate": -0.5, "energy": 0.8, "margin_adj": -0.03},
+    "Immobiliare": {"rev": 1.3, "pp": 0.3, "rate": -1.0, "energy": 0.6, "margin_adj": -0.04},
+    "Altro":       {"rev": 1.0, "pp": 0.4, "rate": -0.4, "energy": 0.5, "margin_adj": -0.02},
+}
+
+def _get_sector_sens(sector):
+    s = (sector or "").strip()
+    for k, v in SECTOR_SENS.items():
+        if k.lower() in s.lower():
+            return v
+    return SECTOR_SENS["Altro"]
+
+def _stress_company(m, scenario):
+    """Applica shock macro all'azienda tramite la catena causale settore"""
+    sector = (m.get("sector") or "Altro")
+    sens = _get_sector_sens(sector)
+    sc = MACRO_SCENARIOS[scenario]
+    
+    rev = float(m.get("revenue") or 0)
+    ebit = float(m.get("ebit") or 0)
+    fcf = float(m.get("fcf") or m.get("oe") or 0)
+    debt = float(m.get("total_debt") or 0)
+    interest = float(m.get("interest") or 0) or 0.01
+    cassa = float(m.get("cassa") or 0)
+    equity = float(m.get("equity") or 1)
+    margin = ebit / rev if rev else 0
+    
+    # Catena causale: PIL -> consumi -> ricavi (con pricing power su inflazione)
+    rev_shock = sc["gdp"] * sens["rev"] / 100
+    price_shock = sc["infl"] * sens["pp"] / 100  # pricing power
+    new_rev = rev * (1 + rev_shock + price_shock)
+    
+    # Margini: peggiorano in crisi, migliorano in boom
+    new_margin = margin + sens["margin_adj"] * (1 + abs(sc["gdp"]) / 5)
+    if new_margin < 0: new_margin = margin * 0.5
+    new_ebit = new_rev * new_margin
+    
+    # Interessi: aumentano con spread e tassi
+    int_mult = 1 + (sc["rates"] + sc["spread"] * 0.3) / 100
+    new_interest = interest * max(int_mult, 0.3)
+    
+    # FCF: segue EBIT con leverage operativo
+    ebit_ratio = new_ebit / ebit if ebit else 1
+    new_fcf = fcf * max(ebit_ratio, 0.2)
+    
+    # Indicatori finanziari
+    debt_ebitda = debt / new_ebit if new_ebit > 0 else 99
+    int_coverage = new_ebit / new_interest if new_interest > 0 else 99
+    cash_runway = cassa / abs(new_fcf) if new_fcf < 0 else 999
+    
+    # Distress probability (euristica)
+    distress = 0
+    if debt_ebitda > 4: distress += 0.25
+    if int_coverage < 2: distress += 0.30
+    if new_fcf < 0 and cassa < abs(new_fcf): distress += 0.35
+    if cash_runway < 1: distress += 0.10
+    
+    # Resilience specifica per scenario (0-100)
+    resilience = 100 - distress * 100
+    if new_fcf > 0 and debt_ebitda < 3: resilience = min(100, resilience + 10)
+    if cassa > debt * 0.3: resilience = min(100, resilience + 8)
+    if margin > 0.15: resilience = min(100, resilience + 5)
+    
+    return {
+        "rev_chg": (rev_shock + price_shock) * 100,
+        "new_rev": new_rev, "new_ebit": new_ebit, "new_fcf": new_fcf,
+        "debt_ebitda": debt_ebitda, "int_cov": int_coverage,
+        "distress": distress, "resilience": max(0, min(100, resilience)),
+        "dividendo_ok": new_fcf > 0 and (m.get("payout") or 0) < 0.8,
+    }
+
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
-    rs = [r for r in Report.query.filter_by(user_id=current_user.id).all() if _get_metric(r, "oe") and _get_metric(r, "shares")]
+    rs = [r for r in Report.query.filter_by(user_id=current_user.id).all()
+          if _get_metric(r, "revenue") and _get_metric(r, "shares")]
     if not rs:
-        return render_template_string(BASE_TEMPLATE, title="Simula", content="<div class='card'><h1>Simulazioni macro</h1><p>Analizza prima un report.</p></div>")
-    rid = request.form.get("rid") or request.args.get("rid") or str(rs[0].id)
+        return render_template_string(BASE_TEMPLATE, title="Simula",
+            content="<div class='card'><h1>Financial Intelligence Engine</h1><p>Analizza prima un report (servono ricavi e numero azioni). Carica un bilancio dopo il deploy per includere i dati extra.</p></div>")
+    rid = request.form.get("rid") or str(rs[0].id)
     rep = next((r for r in rs if str(r.id) == str(rid)), rs[0])
     m = _json.loads(rep.metrics_json or "{}")
-    oe = float(m.get("oe") or 0); shares = float(m.get("shares") or 1); price = m.get("price")
-    sgr = (m.get("Q18") or 8) / 100
-    if request.method == "POST":
-        rf = float(request.form.get("rf", 4)); infl = float(request.form.get("infl", 2))
-        gdp = float(request.form.get("gdp", 1.5)); prem = float(request.form.get("prem", 5.5))
-    else:
-        rf, infl, gdp, prem = 4.0, 2.0, 1.5, 5.5
-    cap = (infl + gdp) / 100 + 0.02
-    g_base = min(sgr, cap)
-    scen = [("Bear", (rf + 2 + prem + 1) / 100, min(infl / 100, cap), -0.25),
-            ("Base", (rf + prem) / 100, g_base, 0.0),
-            ("Bull", (max(rf - 1, 0.5) + max(prem - 1, 2)) / 100, min(g_base + 0.03, 0.20), 0.10)]
+    m["sector"] = rep.sector or "Altro"
+    
+    # Calcola tutti gli scenari
     rows = ""
-    for name, r, g, shock in scen:
-        iv_ps = _sim_dcf(oe * (1 + shock), g, r) / shares
-        mos = (iv_ps - price) / iv_ps * 100 if price and iv_ps else None
-        verdict = "COMPRA" if (mos or 0) >= 30 else ("INTERESSANTE" if (mos or 0) >= 15 else "CARA")
-        rows += f"<tr><td>{name}</td><td>{r*100:.1f}%</td><td>{g*100:.1f}%</td><td style='color:var(--gold)'>{iv_ps:,.0f}</td><td>{f'{mos:.0f}%' if mos is not None else 'N/D'}</td><td>{verdict}</td></tr>"
-    opts = "".join(f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename}</option>" for r in rs)
-    content = f"""<div class='card'><h1>Simulazioni macro</h1>
+    exp_val = 0; w_res = 0
+    for name, sc in MACRO_SCENARIOS.items():
+        r = _stress_company(m, name)
+        color = "var(--teal)" if r["resilience"] >= 70 else ("var(--gold)" if r["resilience"] >= 45 else "#da3633")
+        icon = "🟢" if r["resilience"] >= 70 else ("🟡" if r["resilience"] >= 45 else "🔴")
+        div_txt = "✓" if r["dividendo_ok"] else "⚠"
+        rows += f"<tr><td>{icon} {name}</td><td>{sc['prob']*100:.0f}%</td>"
+        rows += f"<td>{r['rev_chg']:+.1f}%</td>"
+        rows += f"<td>{r['debt_ebitda']:.1f}x</td>"
+        rows += f"<td>{r['int_cov']:.1f}x</td>"
+        rows += f"<td>{div_txt}</td>"
+        rows += f"<td style='color:{color};font-weight:700'>{r['resilience']:.0f}</td></tr>"
+        exp_val += r["rev_chg"] * sc["prob"]
+        w_res += r["resilience"] * sc["prob"]
+    
+    # Resilience Score complessivo
+    res_color = "var(--teal)" if w_res >= 70 else ("var(--gold)" if w_res >= 45 else "#da3633")
+    
+    opts = "".join(f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename} ({r.sector or 'Altro'})</option>" for r in rs)
+    
+    content = f"""<div class='card'><h1>Financial Intelligence Engine</h1>
+    <p style='color:var(--muted)'>Stress test multi-scenario su <strong>{rep.company or rep.filename}</strong> (settore: {rep.sector or 'Altro'})</p>
     <form method='post'><select name='rid'>{opts}</select>
-      <input name='rf' type='number' step='0.1' value='{rf}' placeholder='Risk-free %'>
-      <input name='infl' type='number' step='0.1' value='{infl}' placeholder='Inflazione %'>
-      <input name='gdp' type='number' step='0.1' value='{gdp}' placeholder='PIL %'>
-      <input name='prem' type='number' step='0.1' value='{prem}' placeholder='Premio rischio %'>
-      <button type='submit' class='btn2' style='margin-top:1rem'>Simula</button></form></div>
-    <div class='card'><h2>Risultati (prezzo: {price if price else 'N/D'})</h2>
-    <table><tr><th>Scenario</th><th>Tasso</th><th>Crescita</th><th>Valore</th><th>Margine</th><th>Verdetto</th></tr>{rows}</table></div>"""
+      <button type='submit' class='btn2' style='width:auto;margin-left:8px'>Ricalcola</button></form></div>
+    
+    <div class='card' style='text-align:center;border:2px solid {res_color}'>
+      <h2 style='color:{res_color}'>Resilience Score: {w_res:.0f}/100</h2>
+      <p>Expected Scenario Value: <strong>{exp_val:+.1f}%</strong> ricavi attesi (media ponderata)</p>
+      <p style='color:var(--muted);font-size:.9rem'>Probabilita di sopravvivere a 6 scenari macro (soft landing, boom, recessioni, stagflazione, crisi finanziaria) mantenendo FCF positivo e debito sostenibile.</p>
+    </div>
+    
+    <div class='card'><h2>Matrice scenari</h2>
+    <table><tr><th>Scenario</th><th>Prob.</th><th>Ricavi</th><th>Debt/EBITDA</th><th>Int.Cov.</th><th>Div.</th><th>Resilienza</th></tr>
+    {rows}</table></div>
+    
+    <div class='card'><h2>Come funziona</h2>
+    <p style='color:var(--muted);font-size:.9rem'>
+    <strong>Livello 1 — Macro:</strong> shock su PIL, inflazione, tassi, spread, energia, disoccupazione.<br>
+    <strong>Livello 2 — Settore:</strong> moltiplicatori specifici (banche beneficiano di tassi alti, tech soffre, consumer staples resilienti).<br>
+    <strong>Livello 3 — Azienda:</strong> pricing power, margini, leverage, copertura interessi.<br>
+    <strong>Livello 4 — Output:</strong> bilancio futuro + probabilita di distress + resilienza specifica.</p></div>"""
     return render_template_string(BASE_TEMPLATE, title="Simula", content=content)
-
-def _fmtv(x):
-    try:
-        return f"{float(x):.1f}" if x is not None else "N/D"
-    except Exception:
-        return "N/D"
-
-def _get_metric(r, k):
-    if k == "score":
-        return r.score
-    try:
-        return (_json.loads(r.metrics_json or "{}")).get(k)
-    except Exception:
-        return None
-
-@app.route("/compare", methods=["GET", "POST"])
-@login_required
-def compare():
-    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).limit(20).all()
-    if request.method == "POST":
-        ids = request.form.getlist("ids")[:3]
-        reps = [r for r in rs if str(r.id) in ids]
-        if len(reps) < 2:
-            flash("Seleziona almeno 2 report", "error")
-            return redirect("/compare")
-        labels = [("score", "Score"), ("Q08", "Valore/az"), ("Q09", "Margine %"), ("Q32", "P/E"), ("Q34", "P/BV"), ("B1", "ROE %"), ("B2", "ROA %")]
-        rows = ""
-        for k, lab in labels:
-            cells = "".join(f"<td>{_fmtv(_get_metric(r, k))}</td>" for r in reps)
-            rows += f"<tr><td style='color:var(--gold)'>{lab}</td>{cells}</tr>"
-        head = "".join(f"<th>{r.company or r.filename}</th>" for r in reps)
-        content = f"<h1>Confronto</h1><table><tr><td></td>{head}</tr>{rows}</table>"
-        return render_template_string(BASE_TEMPLATE, title="Confronto", content=content)
-    boxes = "".join(f"<label style='display:block;margin:6px 0'><input type='checkbox' name='ids' value='{r.id}'> {r.company or r.filename}</label>" for r in rs)
-    content = f"<div class='card'><h1>Confronta</h1><form method='post'>{boxes}<button type='submit' style='margin-top:1rem'>Confronta</button></form></div>"
-    return render_template_string(BASE_TEMPLATE, title="Confronta", content=content)
-
-@app.route("/watchlist", methods=["GET", "POST"])
-@login_required
-def watchlist():
-    if request.method == "POST":
-        w = WatchItem(user_id=current_user.id, ticker=request.form.get("ticker", "").upper(),
-                      name=request.form.get("name"), note=request.form.get("note"))
-        db.session.add(w); db.session.commit()
-        flash("Aggiunto!", "success")
-        return redirect("/watchlist")
-    items = WatchItem.query.filter_by(user_id=current_user.id).order_by(WatchItem.created_at.desc()).all()
-    rows = "".join(f"<div class='card'><h2>{w.ticker} - {w.name}</h2><p>{w.note or ''}</p><form method='post' action='/watchlist/{w.id}/delete'><button style='width:auto;background:#da3633;color:white'>Rimuovi</button></form></div>" for w in items)
-    content = """<div class="card"><h1>Watchlist</h1>
-    <form method="post"><input name="ticker" placeholder="Ticker" required>
-      <input name="name" placeholder="Nome" required><input name="note" placeholder="Nota">
-      <button type="submit" style="margin-top:1rem">Aggiungi</button></form></div>""" + (rows or "<p>Vuota.</p>")
-    return render_template_string(BASE_TEMPLATE, title="Watchlist", content=content)
-
-@app.route("/watchlist/<int:wid>/delete", methods=["POST"])
-@login_required
-def watchlist_delete(wid):
-    w = WatchItem.query.get_or_404(wid)
-    if w.user_id == current_user.id:
-        db.session.delete(w); db.session.commit()
-    return redirect("/watchlist")
-
-@app.route("/assistenza", methods=["GET", "POST"])
-@login_required
-def assistenza():
-    if request.method == "POST":
-        t = Ticket(user_id=current_user.id, subject=request.form.get("subject"), message=request.form.get("message"))
-        db.session.add(t); db.session.commit()
-        flash("Ticket aperto!", "success")
-        return redirect("/assistenza")
-    tickets = Ticket.query.filter_by(user_id=current_user.id).order_by(Ticket.created_at.desc()).all()
-    rows = "".join(f"<div class='card'><h2>{t.subject}</h2><p>{t.message}</p><p style='color:var(--muted)'>{t.status} - {t.created_at.strftime('%d/%m/%Y')}</p></div>" for t in tickets)
-    content = """<div class="card"><h1>Assistenza</h1>
-    <form method="post"><input name="subject" placeholder="Oggetto" required>
-      <textarea name="message" rows="5" placeholder="Problema" required></textarea>
-      <button type="submit" style="margin-top:1rem">Apri ticket</button></form></div>""" + (rows or "<p>Nessun ticket.</p>")
-    return render_template_string(BASE_TEMPLATE, title="Assistenza", content=content)
-
-@app.route("/feedback", methods=["GET", "POST"])
-@login_required
-def feedback():
-    if request.method == "POST":
-        fb = Feedback(user_id=current_user.id, rating=int(request.form.get("rating", 5)), message=request.form.get("message"))
-        db.session.add(fb); db.session.commit()
-        flash("Grazie!", "success")
-        return redirect("/feedback")
-    content = """<div class="card"><h1>Feedback</h1>
-    <form method="post"><select name="rating">
-      <option value="5">5 - Eccellente</option><option value="4">4 - Ottimo</option><option value="3">3 - Buono</option></select>
-      <textarea name="message" rows="5" placeholder="Il tuo parere" required></textarea>
-      <button type="submit" style="margin-top:1rem">Invia</button></form></div>"""
-    return render_template_string(BASE_TEMPLATE, title="Feedback", content=content)
 
 @app.route("/account", methods=["GET", "POST"])
 @login_required
