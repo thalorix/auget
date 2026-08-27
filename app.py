@@ -2418,3 +2418,4 @@ except Exception as e:
 if __name__ == "__main__":
     print("AUGET WEB con login: http://127.0.0.1:5001")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False, threaded=True)
+# Fix forzato gio 27 ago 2026, 21:18:01, CEST
