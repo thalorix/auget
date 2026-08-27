@@ -818,6 +818,46 @@ def simula():
     <strong>Resilience Score:</strong> quanto è probabile che l'azienda sopravviva e continui a generare FCF durante una crisi.</p></div>"""
     return render_template_string(BASE_TEMPLATE, title="Simula", content=content)
 
+
+@app.route("/compare", methods=["GET", "POST"])
+@login_required
+def compare():
+    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
+    if request.method == "POST":
+        ids = request.form.getlist("ids")[:3]
+        reps = [r for r in rs if str(r.id) in ids]
+        if len(reps) < 2:
+            flash("Seleziona almeno 2 report", "error")
+            return redirect("/compare")
+        html = "<div class='card'><h1>Confronto</h1><table><tr><th>Metrica</th>"
+        for r in reps: html += "<th>" + (r.company or r.filename) + "</th>"
+        html += "</tr><tr><td>Score</td>"
+        for r in reps: html += "<td>" + str(r.score or "N/D") + "</td>"
+        html += "</tr></table></div>"
+        return render_template_string(BASE_TEMPLATE, title="Confronto", content=html)
+    boxes = "".join("<label style='display:block;margin:6px 0'><input type='checkbox' name='ids' value='" + str(r.id) + "'> " + (r.company or r.filename) + "</label>" for r in rs)
+    return render_template_string(BASE_TEMPLATE, title="Confronta", content="<div class='card'><h1>Confronta Report</h1><form method='post'>" + boxes + "<button type='submit' style='margin-top:1rem'>Confronta</button></form></div>")
+
+@app.route("/watchlist", methods=["GET", "POST"])
+@login_required
+def watchlist():
+    if request.method == "POST":
+        w = WatchItem(user_id=current_user.id, ticker=request.form.get("ticker", "").upper(), name=request.form.get("name"), note=request.form.get("note"))
+        db.session.add(w); db.session.commit()
+        flash("Aggiunto!", "success")
+        return redirect("/watchlist")
+    items = WatchItem.query.filter_by(user_id=current_user.id).all()
+    rows = "".join("<div class='card'><h3>" + w.ticker + "</h3><p>" + (w.note or "") + "</p></div>" for w in items)
+    return render_template_string(BASE_TEMPLATE, title="Watchlist", content="<div class='card'><h1>Watchlist</h1><form method='post'><input name='ticker' placeholder='Ticker'><input name='name' placeholder='Nome'><input name='note' placeholder='Nota'><button type='submit'>Aggiungi</button></form>" + rows + "</div>")
+
+@app.route("/watchlist/<int:wid>/delete", methods=["POST"])
+@login_required
+def watchlist_delete(wid):
+    w = WatchItem.query.get_or_404(wid)
+    if w.user_id == current_user.id:
+        db.session.delete(w); db.session.commit()
+    return redirect("/watchlist")
+
 @app.route("/account", methods=["GET", "POST"])
 @login_required
 def account():
