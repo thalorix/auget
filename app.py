@@ -44,12 +44,13 @@ sys.path.insert(0, BASE)
 import test1 as engine
 
 app = Flask(__name__)
+app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-key")
 _dbu = os.environ.get("DATABASE_URL", "sqlite:///users.db")
 if _dbu.startswith("postgres://"):
     _dbu = _dbu.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = _dbu
-app.config["UPLOAD_FOLDER"]
 # Configurazione Flask-Mail
 app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
 app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
@@ -61,7 +62,6 @@ app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'norep
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.config['SECRET_KEY'])
 
-app.config["UPLOAD_FOLDER"] = os.path.join(BASE, "uploads")
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(os.path.join(BASE, "outputs"), exist_ok=True)
 
@@ -510,7 +510,6 @@ def do_analyze():
     if lim is not None and _used_this_month(current_user.id) >= lim:
         flash(f"Limite raggiunto ({lim}/mese).", "error")
         return redirect(url_for("pricing"))
-    path = os.path.join(app.config["UPLOAD_FOLDER"], f.filename)
     f.save(path)
     try:
         res = engine.analyze_document(path)
@@ -1403,7 +1402,6 @@ def simula():
             
             f_obj = request.files["report_file"]
             if f_obj and f_obj.filename:
-                path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
                 f_obj.save(path)
                 try:
                     res = engine.analyze_document(path)
@@ -2418,4 +2416,3 @@ except Exception as e:
 if __name__ == "__main__":
     print("AUGET WEB con login: http://127.0.0.1:5001")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False, threaded=True)
-# Fix forzato gio 27 ago 2026, 21:18:01, CEST
