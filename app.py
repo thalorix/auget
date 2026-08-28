@@ -853,7 +853,7 @@ def simula():
     
     html_out += "<div style='border:3px dashed #475569;border-radius:12px;padding:3rem;background:#0f172a;text-align:center;transition:all 0.3s'>"
     html_out += "<label style='cursor:pointer;display:block'>"
-    html_out += "<input type='file' name='report_file' accept='.pdf,.docx,.txt' id='file-upload' style='display:none' onchange='document.getElementById("file-name").textContent = this.files[0] ? this.files[0].name : "Nessun file selezionato"; this.parentElement.style.borderColor = "#10b981"'>"
+    html_out += "<input type='file' name='report_file' accept='.pdf,.docx,.txt' id='file-upload' style='display:none' onchange='document.getElementById(\'file-name\').textContent = this.files[0] ? this.files[0].name : \'Nessun file selezionato\'; this.parentElement.style.borderColor = \'#10b981\'>'"
     html_out += "<div style='font-size:4rem;margin-bottom:1rem'>📎</div>"
     html_out += "<div style='color:#e2e8f0;font-size:1.2rem;font-weight:600;margin-bottom:0.5rem'>Clicca per selezionare un file</div>"
     html_out += "<div style='color:#64748b;font-size:0.95rem'>PDF, DOCX o TXT • Max 50MB</div>"
