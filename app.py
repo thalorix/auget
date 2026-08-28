@@ -315,6 +315,35 @@ def contatti():
     <p><strong>LinkedIn:</strong> {cfg.contact_linkedin}</p></div>"""
     return render_template_string(BASE_TEMPLATE, title="Contatti", content=content)
 
+
+@app.route("/feedback")
+@login_required
+def feedback():
+    content = "<div class='card'><h1>Feedback</h1>"
+    content += "<p style='color:var(--muted)'>Aiutaci a migliorare AUGET! Dicci cosa pensi della piattaforma.</p>"
+    content += "<form method='post' action='mailto:support@sibilla.cc' enctype='text/plain'>"
+    content += "<textarea name='feedback' placeholder='Cosa ti è piaciuto? Cosa vorresti migliorare?' style='width:100%;height:200px;margin:1rem 0;padding:1rem;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)'></textarea>"
+    content += "<button type='submit' class='btn2'>Invia Feedback</button>"
+    content += "</form>"
+    content += "<p style='color:var(--muted);margin-top:1rem'>Oppure scrivici direttamente a <a href='mailto:support@sibilla.cc' style='color:var(--teal)'>support@sibilla.cc</a></p>"
+    content += "</div>"
+    return render_template_string(BASE_TEMPLATE, title="Feedback", content=content)
+
+@app.route("/assistenza")
+def assistenza():
+    content = "<div class='card'><h1>Assistenza</h1>"
+    content += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:2rem;margin:2rem 0'>"
+    content += "<div class='card'><h2 style='color:var(--teal)'>Documentazione</h2><p>Trovi guide e tutorial su come usare AUGET.</p><a href='/tutorial' class='btn2' style='display:inline-block;margin-top:1rem'>Vai al Tutorial</a></div>"
+    content += "<div class='card'><h2 style='color:var(--gold)'>Email Support</h2><p>Rispondiamo entro 24 ore.</p><a href='mailto:support@sibilla.cc' class='btn2' style='display:inline-block;margin-top:1rem;background:var(--gold);color:#0b1220'>Scrivici</a></div>"
+    content += "<div class='card'><h2 style='color:var(--blue)'>FAQ</h2><p>Domande frequenti e risposte.</p><a href='/prezzi' class='btn2' style='display:inline-block;margin-top:1rem'>Vedi Prezzi e FAQ</a></div>"
+    content += "</div>"
+    content += "<div class='card' style='background:linear-gradient(135deg, rgba(45,212,167,0.1), rgba(240,180,41,0.1));border:2px solid var(--teal);padding:2rem;text-align:center'>"
+    content += "<h2 style='color:var(--teal);margin-top:0'>Hai bisogno di aiuto personalizzato?</h2>"
+    content += "<p style='font-size:1.1rem'>Prenota una demo gratuita di 30 minuti con il nostro team.</p>"
+    content += "<a href='mailto:support@sibilla.cc?subject=Prenotazione Demo AUGET' class='btn2' style='padding:1rem 2rem;font-size:1.1rem'>Prenota Demo</a>"
+    content += "</div></div>"
+    return render_template_string(BASE_TEMPLATE, title="Assistenza", content=content)
+
 @app.route("/collabora", methods=["GET", "POST"])
 def collabora():
     if request.method == "POST":
