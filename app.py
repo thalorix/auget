@@ -186,6 +186,8 @@ class SiteConfig(db.Model):
     contact_linkedin = db.Column(db.String(200), default="linkedin.com/in/matteo-zanoni")
 
 def get_cfg():
+    # Garantisce che le tabelle esistano prima di qualsiasi query (fallback infallibile)
+    db.create_all()
     c = SiteConfig.query.first()
     if not c:
         c = SiteConfig(); db.session.add(c); db.session.commit()
