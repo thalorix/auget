@@ -1353,3 +1353,33 @@ with app.app_context():
     
     db.session.commit()
     print("✅ Database pronto. Credenziali garantite: admin@sibilla.cc / admin123")
+
+# ==============================================================================
+# CREAZIONE CREDENZIALI PREDEFINITE ALL'AVVIO
+# ==============================================================================
+def create_default_users():
+    """Crea utenti admin e demo se non esistono"""
+    with app.app_context():
+        db.create_all()
+        
+        # Crea o aggiorna admin
+        admin = User.query.filter_by(email="admin@sibilla.cc").first()
+        if not admin:
+            admin = User(email="admin@sibilla.cc", subscription_tier="admin")
+            db.session.add(admin)
+            print("✅ Utente admin creato")
+        admin.password = hashlib.sha256("admin123".encode()).hexdigest()
+        
+        # Crea o aggiorna demo
+        demo = User.query.filter_by(email="demo@demo.com").first()
+        if not demo:
+            demo = User(email="demo@demo.com", subscription_tier="demo")
+            db.session.add(demo)
+            print("✅ Utente demo creato")
+        demo.password = hashlib.sha256("demo123".encode()).hexdigest()
+        
+        db.session.commit()
+        print("✅ Credenziali garantite: admin@sibilla.cc / admin123 | demo@demo.com / demo123")
+
+# Esegui immediatamente alla carica del modulo
+create_default_users()
