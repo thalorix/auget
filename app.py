@@ -50,9 +50,6 @@ os.makedirs(os.path.join(BASE, "outputs"), exist_ok=True)
 
 db = SQLAlchemy(app)
 # Inizializza il database creando tutte le tabelle mancanti
-with app.app_context():
-    db.create_all()
-
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
@@ -1238,3 +1235,15 @@ def _fetch_all_macro_data():
 if __name__ == "__main__":
     print("AUGET WEB con login: http://127.0.0.1:5001")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False, threaded=True)
+
+
+# ==============================================================================
+# INIZIALIZZAZIONE DATABASE (Eseguita all'import del modulo da WSGI/Gunicorn)
+# ==============================================================================
+import sys
+try:
+    with app.app_context():
+        db.create_all()
+        print("✅ Database tables created/verified successfully.", file=sys.stderr)
+except Exception as e:
+    print(f"❌ FAILED to create database tables: {e}", file=sys.stderr)
