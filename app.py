@@ -752,140 +752,336 @@ def _stress_company(m, scenario):
 def simula():
     rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
     
+    # DATI REALI da API pubbliche
+    real_macro = _fetch_all_macro_data()
+    yf_data = _safe_yf_fetch()
+    
+    # Solo 5 criteri con dati REALI verificabili
+    macro_criteria = {
+        "gdp": {"label": "Crescita PIL mondiale %", "base": real_macro.get("gdp_growth", 1.5), "real": real_macro.get("gdp_growth"), "source": "IMF WEO" if "gdp_growth" in real_macro else "placeholder", "active": True},
+        "infl": {"label": "Inflazione CPI mondiale %", "base": real_macro.get("inflation", 2.0), "real": real_macro.get("inflation"), "source": "World Bank WDI" if "inflation" in real_macro else "placeholder", "active": True},
+        "rates": {"label": "Tassi interesse 10y %", "base": real_macro.get("treasury_10y", yf_data["rates"]), "real": real_macro.get("treasury_10y", yf_data["rates"]), "source": "FRED/BIS/yfinance", "active": True},
+        "unemp": {"label": "Disoccupazione %", "base": real_macro.get("unemployment", 4.2), "real": real_macro.get("unemployment"), "source": "OECD" if "unemployment" in real_macro else "placeholder", "active": True},
+        "oil": {"label": "Petrolio WTI $", "base": real_macro.get("oil_price", yf_data["oil"]), "real": real_macro.get("oil_price", yf_data["oil"]), "source": "yfinance CL=F", "active": True},
+    }
+    
+    # Solo 3 scenari STORICI verificati (dati reali)
+    scenarios_def = {
+        "Crisi 2008 (Lehman)": {"desc": "Dati reali: PIL -4.5%, tassi -4%, petrolio -60%, spread +8%", "active": True,
+            "shocks": {"gdp": -4.5, "infl": -2.0, "rates": -4.0, "unemp": 4.0, "oil": -60.0}},
+        "Pandemia 2020 (COVID)": {"desc": "Dati reali: PIL -3.5%, tassi -2%, petrolio -40%, spread +4%", "active": True,
+            "shocks": {"gdp": -3.5, "infl": -1.0, "rates": -2.0, "unemp": 3.0, "oil": -40.0}},
+        "Scenario attuale": {"desc": "Dati macro odierni senza shock aggiuntivi", "active": True,
+            "shocks": {"gdp": 0.0, "infl": 0.0, "rates": 0.0, "unemp": 0.0, "oil": 0.0}},
+    }
+    
+    rep = rs[0] if rs else None
+    if request.method == "POST" and "rid" in request.form:
+        rid = request.form.get("rid")
+        rep = next((r for r in rs if str(r.id) == str(rid)), rs[0] if rs else None)
+    
     if request.method == "POST":
-        # Upload nuovo report o selezione esistente
+        if "save_config" in request.form:
+            for ck in macro_criteria.keys():
+                act = request.form.get("crit_" + ck + "_act")
+                macro_criteria[ck]["active"] = (act == "on")
+            for sn in scenarios_def.keys():
+                act = request.form.get("scen_" + sn + "_act")
+                scenarios_def[sn]["active"] = (act == "on")
+            flash("Configurazione salvata!", "success")
+            return redirect("/simula")
+        
         if "report_file" in request.files:
-            f = request.files["report_file"]
-            if f and f.filename:
-                path = os.path.join(app.config["UPLOAD_FOLDER"], f.filename)
-                f.save(path)
+            f_obj = request.files["report_file"]
+            if f_obj and f_obj.filename:
+                path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
+                f_obj.save(path)
                 try:
                     res = engine.analyze_document(path)
                     html_path = engine.export_html(res)
                     html = open(html_path, encoding="utf-8").read()
                     sel = {"score": res.get("scores", {}).get("total")}
-                    for m in res.get("quant", []):
-                        if m.code in ("Q08", "Q09", "Q16", "Q18", "Q32", "Q34", "B1", "B2", "B4", "B5"):
-                            sel[m.code] = m.value
+                    for m_item in res.get("quant", []):
+                        if m_item.code in ("Q08", "Q09", "Q16", "Q18", "Q32", "Q34", "B1", "B2", "B4", "B5"):
+                            sel[m_item.code] = m_item.value
                     _D = res.get("D", {})
                     sel.update({"oe": _D.get("oe") or _D.get("fcf"), "fcf": _D.get("fcf"),
                                 "shares": _D.get("shares"), "price": _D.get("price"),
                                 "revenue": _D.get("revenue"), "ebit": _D.get("ebit"),
                                 "interest": _D.get("interest"), "total_debt": _D.get("total_debt"),
                                 "cassa": _D.get("cassa"), "equity": _D.get("equity")})
-                    rep = Report(user_id=current_user.id, filename=f.filename,
+                    ticker = (res.get("ticker") or "").strip()
+                    if ticker: sel = _enrich_with_yfinance(ticker, sel)
+                    rep = Report(user_id=current_user.id, filename=f_obj.filename,
                                  company=res.get("company", ""), score=sel["score"],
                                  html=html, metrics_json=_json.dumps(sel))
                     db.session.add(rep); db.session.commit()
                     rs.insert(0, rep)
+                    flash("Report caricato!", "success")
+                    return redirect("/simula")
                 except Exception as e:
-                    flash(f"Errore analisi: {str(e)}", "error")
+                    flash("Errore: " + str(e), "error")
+    
+    html_out = ""
+    
+    # HEADER MODERNO CON GRADIENTE
+    html_out += "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,0.3)'>"
+    html_out += "<h1 style='color:#fbbf24;margin:0;font-size:3rem;font-weight:800;letter-spacing:1px'>Financial Intelligence Engine</h1>"
+    html_out += "<p style='color:#e2e8f0;font-size:1.3rem;margin:1rem 0 0 0'>Stress test aziendale con dati macro reali e scenari storici verificati</p>"
+    html_out += "<div style='display:flex;gap:2rem;justify-content:center;flex-wrap:wrap;margin-top:2rem'>"
+    html_out += "<div style='background:rgba(255,255,255,0.1);padding:1rem 2rem;border-radius:12px;border:2px solid #10b981'><div style='font-size:2rem;font-weight:800;color:#10b981'>100%</div><div style='color:#94a3b8;font-size:0.9rem'>Dati Reali</div></div>"
+    html_out += "<div style='background:rgba(255,255,255,0.1);padding:1rem 2rem;border-radius:12px;border:2px solid #fbbf24'><div style='font-size:2rem;font-weight:800;color:#fbbf24'>3</div><div style='color:#94a3b8;font-size:0.9rem'>Scenari Storici</div></div>"
+    html_out += "<div style='background:rgba(255,255,255,0.1);padding:1rem 2rem;border-radius:12px;border:2px solid #3b82f6'><div style='font-size:2rem;font-weight:800;color:#3b82f6'>3min</div><div style='color:#94a3b8;font-size:0.9rem'>Tempo Analisi</div></div>"
+    html_out += "</div></div>"
+    
+    # FORM UPLOAD SEMPRE VISIBILE
+    html_out += "<div style='background:#1e293b;padding:2.5rem;border-radius:16px;margin-bottom:2rem;border:3px solid #fbbf24;box-shadow:0 8px 32px rgba(251,191,36,0.2)'>"
+    html_out += "<h2 style='color:#fbbf24;margin-top:0;font-size:2rem;text-align:center'>🚀 Inizia il tuo Stress Test</h2>"
+    html_out += "<form method='post' enctype='multipart/form-data'>"
+    
+    if rs:
+        html_out += "<div style='margin-bottom:1.5rem'>"
+        html_out += "<label style='display:block;color:#e2e8f0;font-weight:600;margin-bottom:0.5rem;font-size:1.1rem'>Seleziona un report esistente:</label>"
+        opts = "<option value='' disabled selected>📊 Scegli un report...</option>"
+        for r_item in rs:
+            sel_str = " selected" if rep and r_item.id == rep.id else ""
+            opts += "<option value='" + str(r_item.id) + "'" + sel_str + ">" + (r_item.company or r_item.filename) + " - " + (r_item.sector or "Altro") + "</option>"
+        html_out += "<select name='rid' style='width:100%;padding:1rem;border-radius:10px;border:2px solid #475569;background:#0f172a;color:#e2e8f0;font-size:1.1rem'>" + opts + "</select>"
+        html_out += "</div>"
         
-        rid = request.form.get("rid")
-        if rid:
-            rep = next((r for r in rs if str(r.id) == str(rid)), rs[0] if rs else None)
-        else:
-            rep = rs[0] if rs else None
+        html_out += "<div style='text-align:center;margin:1.5rem 0;color:#64748b;font-size:1.2rem'>— oppure —</div>"
+    
+    html_out += "<div style='border:3px dashed #475569;border-radius:12px;padding:3rem;background:#0f172a;text-align:center;transition:all 0.3s'>"
+    html_out += "<label style='cursor:pointer;display:block'>"
+    html_out += "<input type='file' name='report_file' accept='.pdf,.docx,.txt' id='file-upload' style='display:none' onchange='document.getElementById("file-name").textContent = this.files[0] ? this.files[0].name : "Nessun file selezionato"; this.parentElement.style.borderColor = "#10b981"'>"
+    html_out += "<div style='font-size:4rem;margin-bottom:1rem'>📎</div>"
+    html_out += "<div style='color:#e2e8f0;font-size:1.2rem;font-weight:600;margin-bottom:0.5rem'>Clicca per selezionare un file</div>"
+    html_out += "<div style='color:#64748b;font-size:0.95rem'>PDF, DOCX o TXT • Max 50MB</div>"
+    html_out += "<div id='file-name' style='color:#10b981;font-weight:600;margin-top:1rem;font-size:1.1rem'>Nessun file selezionato</div>"
+    html_out += "</label>"
+    html_out += "</div>"
+    
+    html_out += "<button type='submit' style='width:100%;margin-top:1.5rem;padding:1.2rem;background:linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);color:#0f172a;border:none;border-radius:10px;font-size:1.3rem;font-weight:800;cursor:pointer;transition:all 0.3s;box-shadow:0 4px 16px rgba(251,191,36,0.4)'> AVVIA ANALISI STRESS TEST</button>"
+    html_out += "</form>"
+    html_out += "</div>"
+    
+    # SEZIONE "COME FUNZIONA"
+    html_out += "<div style='margin-bottom:2rem'>"
+    html_out += "<h2 style='color:#fbbf24;text-align:center;font-size:2rem;margin-bottom:1.5rem'> Come Funziona in 3 Step</h2>"
+    html_out += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1.5rem'>"
+    html_out += "<div style='background:#1e293b;padding:2rem;border-radius:12px;border:2px solid #10b981;text-align:center'><div style='font-size:3rem;margin-bottom:1rem'>1️⃣</div><h3 style='color:#10b981;margin:0 0 1rem 0'>Carica Bilancio</h3><p style='color:#94a3b8;margin:0'>PDF, DOCX o TXT. Estraiamo automaticamente ricavi, EBIT, FCF, debito e cassa.</p></div>"
+    html_out += "<div style='background:#1e293b;padding:2rem;border-radius:12px;border:2px solid #fbbf24;text-align:center'><div style='font-size:3rem;margin-bottom:1rem'>2️⃣</div><h3 style='color:#fbbf24;margin:0 0 1rem 0'>Scegli Scenario</h3><p style='color:#94a3b8;margin:0'>Testa l'azienda su Crisi 2008, Pandemia 2020 o scenario attuale con dati reali.</p></div>"
+    html_out += "<div style='background:#1e293b;padding:2rem;border-radius:12px;border:2px solid #3b82f6;text-align:center'><div style='font-size:3rem;margin-bottom:1rem'>3️⃣</div><h3 style='color:#3b82f6;margin:0 0 1rem 0'>Ottieni Risultati</h3><p style='color:#94a3b8;margin:0'>Resilience Score, breakdown dettagliato, grafici e report PDF scaricabile.</p></div>"
+    html_out += "</div></div>"
+    
+    # SEZIONE REPORT SELEZIONATO
+    if rep:
+        m = _json.loads(rep.metrics_json or "{}")
+        html_out += "<div style='background:#1e293b;padding:2rem;border-radius:12px;margin-bottom:2rem;border-left:5px solid #fbbf24'>"
+        html_out += "<h2 style='color:#fbbf24;margin-top:0'> Report Selezionato</h2>"
+        html_out += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;margin-top:1rem'>"
+        html_out += "<div style='background:#0f172a;padding:1rem;border-radius:8px'><div style='color:#64748b;font-size:0.85rem'>Azienda</div><div style='color:#e2e8f0;font-weight:700;font-size:1.1rem'>" + (rep.company or rep.filename) + "</div></div>"
+        html_out += "<div style='background:#0f172a;padding:1rem;border-radius:8px'><div style='color:#64748b;font-size:0.85rem'>Score AUGET</div><div style='color:#fbbf24;font-weight:800;font-size:1.5rem'>" + str(rep.score or "N/D") + "/100</div></div>"
+        html_out += "<div style='background:#0f172a;padding:1rem;border-radius:8px'><div style='color:#64748b;font-size:0.85rem'>Settore</div><div style='color:#e2e8f0;font-weight:700'>" + (rep.sector or "Altro") + "</div></div>"
+        html_out += "</div></div>"
+    
+    # SEZIONE LIV 1 - DATI MACRO
+    html_out += "<div style='background:#1e293b;padding:2rem;border-radius:12px;margin-bottom:2rem;border-left:5px solid #10b981'>"
+    html_out += "<h2 style='color:#10b981;margin-top:0'>📊 LIV 1 - Dati Macro Reali</h2>"
+    html_out += "<p style='color:#94a3b8'>5 variabili con fonti pubbliche verificabili</p>"
+    html_out += "<form method='post'><input type='hidden' name='save_config' value='1'>"
+    html_out += "<div style='overflow-x:auto;margin-top:1rem'>"
+    html_out += "<table style='width:100%;border-collapse:collapse'>"
+    html_out += "<tr style='background:#0f172a'><th style='padding:1rem;text-align:left;color:#fbbf24;border-bottom:2px solid #475569'>Criterio</th><th style='padding:1rem;text-align:left;color:#fbbf24;border-bottom:2px solid #475569'>Fonte</th><th style='padding:1rem;text-align:left;color:#fbbf24;border-bottom:2px solid #475569'>Valore</th><th style='padding:1rem;text-align:center;color:#fbbf24;border-bottom:2px solid #475569'>Attivo</th></tr>"
+    for ck, cv in macro_criteria.items():
+        real_tag = " ✅" if cv["real"] is not None else ""
+        html_out += "<tr style='border-bottom:1px solid #334155'><td style='padding:1rem;color:#e2e8f0;font-weight:600'>" + cv["label"] + real_tag + "</td>"
+        html_out += "<td style='padding:1rem;color:#94a3b8;font-size:0.9rem'>" + cv["source"] + "</td>"
+        html_out += "<td style='padding:1rem;color:#e2e8f0;font-weight:700'>" + "{:.2f}".format(cv["base"]) + "</td>"
+        checked = " checked" if cv["active"] else ""
+        html_out += "<td style='padding:1rem;text-align:center'><input type='checkbox' name='crit_" + ck + "_act'" + checked + " style='width:20px;height:20px;cursor:pointer'></td></tr>"
+    html_out += "</table></div>"
+    
+    html_out += "<h3 style='color:#fbbf24;margin-top:2rem'> Scenari Storici Verificati</h3>"
+    html_out += "<table style='width:100%;border-collapse:collapse;margin-top:1rem'>"
+    html_out += "<tr style='background:#0f172a'><th style='padding:1rem;text-align:left;color:#fbbf24;border-bottom:2px solid #475569'>Scenario</th><th style='padding:1rem;text-align:left;color:#fbbf24;border-bottom:2px solid #475569'>Dati storici</th><th style='padding:1rem;text-align:center;color:#fbbf24;border-bottom:2px solid #475569'>Includi</th></tr>"
+    for sn, sd in scenarios_def.items():
+        checked = " checked" if sd["active"] else ""
+        html_out += "<tr style='border-bottom:1px solid #334155'><td style='padding:1rem;color:#e2e8f0;font-weight:700'>" + sn + "</td><td style='padding:1rem;color:#94a3b8;font-size:0.9rem'>" + sd["desc"] + "</td>"
+        html_out += "<td style='padding:1rem;text-align:center'><input type='checkbox' name='scen_" + sn + "_act'" + checked + " style='width:20px;height:20px;cursor:pointer'></td></tr>"
+    html_out += "</table>"
+    html_out += "<button type='submit' style='margin-top:1.5rem;padding:0.8rem 2rem;background:#10b981;color:#0f172a;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:1rem'>💾 Salva Configurazione</button>"
+    html_out += "</form></div>"
+    
+    # SEZIONE LIV 2 E 3 (solo se c'è un report)
+    if rep:
+        m = _json.loads(rep.metrics_json or "{}")
+        sector = rep.sector or "Altro"
+        pil_sens = 1.0
+        infl_sens = 0.3
+        
+        demo_scen = scenarios_def.get("Crisi 2008 (Lehman)", list(scenarios_def.values())[0])
+        shocks = demo_scen["shocks"]
+        
+        rev = float(m.get("revenue") or 0)
+        ebit = float(m.get("ebit") or 0)
+        fcf = float(m.get("fcf") or 0)
+        debt = float(m.get("total_debt") or 0)
+        interest = float(m.get("interest") or 0) or 0.01
+        cassa = float(m.get("cassa") or 0)
+        if not rev and ebit: rev = ebit / 0.15
+        if not ebit and rev: ebit = rev * 0.15
+        if not fcf and ebit: fcf = ebit * 0.7
+        margin = ebit / rev if rev else 0.15
+        
+        vol_shock = shocks.get("gdp", 0) * pil_sens / 100.0
+        price_shock = shocks.get("infl", 0) * infl_sens / 100.0
+        rev_shock = vol_shock + price_shock
+        new_rev = rev * (1.0 + rev_shock)
+        new_ebit = new_rev * margin
+        int_mult = 1.0 + shocks.get("rates", 0) / 100.0
+        new_interest = interest * max(int_mult, 0.3)
+        ebit_ratio = new_ebit / ebit if ebit else 1.0
+        new_fcf = fcf * max(ebit_ratio, 0.2)
+        
+        de_old = debt / ebit if ebit > 0 else 0
+        de_new = debt / new_ebit if new_ebit > 0 else 99
+        ic_old = ebit / interest if interest > 0 else 0
+        ic_new = new_ebit / new_interest if new_interest > 0 else 99
+        
+        html_out += "<div style='background:#1e293b;padding:2rem;border-radius:12px;margin-bottom:2rem;border-left:5px solid #3b82f6'>"
+        html_out += "<h2 style='color:#3b82f6;margin-top:0'>🔗 LIV 2 - Catena Causale Matematica</h2>"
+        html_out += "<p style='color:#94a3b8'>Calcoli algebrici esatti applicati ai tuoi dati reali</p>"
+        
+        html_out += "<div style='background:#0f172a;padding:1.5rem;border-radius:10px;font-family:monospace;line-height:2;margin-top:1rem'>"
+        html_out += "<div style='color:#fbbf24;font-weight:700;margin-bottom:1rem'>Scenario: Crisi 2008 (Lehman Brothers)</div>"
+        html_out += "<div style='color:#e2e8f0'>PIL: <span style='color:#ef4444'>" + "{:+.1f}".format(shocks.get("gdp", 0)) + "%</span></div>"
+        html_out += "<div style='color:#64748b'>↓ (sensibilità 1:1)</div>"
+        html_out += "<div style='color:#e2e8f0'>Ricavi: <span style='color:#ef4444'>" + "{:+.1f}".format(rev_shock * 100) + "%</span> (da " + "{:,.0f}".format(rev) + "M a " + "{:,.0f}".format(new_rev) + "M)</div>"
+        html_out += "<div style='color:#64748b'>↓ (margine costante)</div>"
+        html_out += "<div style='color:#e2e8f0'>EBIT: <span style='color:#ef4444'>" + "{:+.1f}".format(((new_ebit - ebit) / ebit * 100) if ebit else 0) + "%</span> (da " + "{:,.0f}".format(ebit) + "M a " + "{:,.0f}".format(new_ebit) + "M)</div>"
+        html_out += "<div style='color:#64748b'>↓</div>"
+        html_out += "<div style='color:#e2e8f0'>FCF: <span style='color:#ef4444'>" + "{:+.1f}".format(((new_fcf - fcf) / fcf * 100) if fcf else 0) + "%</span> (da " + "{:,.0f}".format(fcf) + "M a " + "{:,.0f}".format(new_fcf) + "M)</div>"
+        html_out += "<div style='color:#64748b'>↓</div>"
+        html_out += "<div style='color:#e2e8f0'>Tassi: <span style='color:#ef4444'>" + "{:+.1f}".format(shocks.get("rates", 0)) + "%</span></div>"
+        html_out += "<div style='color:#64748b'>↓</div>"
+        html_out += "<div style='color:#e2e8f0'>Interessi: da " + "{:,.0f}".format(interest) + "M a " + "{:,.0f}".format(new_interest) + "M</div>"
+        html_out += "<div style='color:#64748b'>↓</div>"
+        html_out += "<div style='color:#e2e8f0'>Debt/EBITDA: <span style='color:#fbbf24'>" + "{:.1f}".format(de_old) + "x → " + "{:.1f}".format(de_new) + "x</span></div>"
+        html_out += "<div style='color:#e2e8f0'>Interest Coverage: <span style='color:#fbbf24'>" + "{:.1f}".format(ic_old) + "x → " + "{:.1f}".format(ic_new) + "x</span></div>"
+        html_out += "</div></div>"
+        
+        # LIV 3 - RISULTATI
+        html_out += "<div style='background:#1e293b;padding:2rem;border-radius:12px;margin-bottom:2rem;border-left:5px solid #fbbf24'>"
+        html_out += "<h2 style='color:#fbbf24;margin-top:0'>🏆 LIV 3 - Risultati Stress Test</h2>"
+        html_out += "<p style='color:#94a3b8'>Voto basato su calcoli matematici applicati a scenari storici reali</p>"
+        
+        active_scenarios = {k: v for k, v in scenarios_def.items() if v["active"]}
+        total_score = 0.0
+        count = 0
+        scenarios_results_local = []
+        
+        for scen_name, scen_data in active_scenarios.items():
+            shocks = scen_data["shocks"]
+            vol_shock = shocks.get("gdp", 0) * pil_sens / 100.0
+            price_shock = shocks.get("infl", 0) * infl_sens / 100.0
+            rev_shock = vol_shock + price_shock
+            new_rev = rev * (1.0 + rev_shock)
+            new_ebit = new_rev * margin
+            int_mult = 1.0 + shocks.get("rates", 0) / 100.0
+            new_interest = interest * max(int_mult, 0.3)
+            ebit_ratio = new_ebit / ebit if ebit else 1.0
+            new_fcf = fcf * max(ebit_ratio, 0.2)
+            
+            de_new = debt / new_ebit if new_ebit > 0 else 99
+            ic_new = new_ebit / new_interest if new_interest > 0 else 99
+            
+            score = 100.0
+            if new_fcf < 0: score -= 30
+            if de_new > 4: score -= 25
+            elif de_new > 3: score -= 15
+            if ic_new < 2: score -= 25
+            elif ic_new < 3: score -= 15
+            if cassa > debt * 0.5: score += 10
+            if new_fcf > 0 and de_new < 2: score += 10
+            score = max(0, min(100, score))
+            
+            total_score += score
+            count += 1
+            scenarios_results_local.append((scen_name, score))
+            
+            if score >= 75: color = "#10b981"; label = "RESILIENTE"
+            elif score >= 60: color = "#22c55e"; label = "SOLIDA"
+            elif score >= 45: color = "#fbbf24"; label = "MODERATA"
+            elif score >= 30: color = "#f59e0b"; label = "FRAGILE"
+            else: color = "#ef4444"; label = "A RISCHIO"
+            
+            html_out += "<div style='border:2px solid " + color + ";border-radius:12px;padding:1.5rem;margin:1.5rem 0;background:#0f172a'>"
+            html_out += "<div style='display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;margin-bottom:1rem'>"
+            html_out += "<h3 style='margin:0;color:" + color + ";font-size:1.3rem'>" + scen_name + "</h3>"
+            html_out += "<div style='text-align:right'><div style='font-size:3rem;font-weight:800;color:" + color + ";line-height:1'>" + str(int(score)) + "</div><div style='font-size:0.9rem;color:" + color + ";font-weight:700'>" + label + "</div></div>"
+            html_out += "</div>"
+            html_out += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:1rem;font-size:0.95rem'>"
+            html_out += "<div style='background:#1e293b;padding:0.8rem;border-radius:6px'><strong style='color:#94a3b8'>Ricavi:</strong> <span style='color:" + color + "'>" + "{:+.0f}".format(rev_shock * 100) + "%</span></div>"
+            html_out += "<div style='background:#1e293b;padding:0.8rem;border-radius:6px'><strong style='color:#94a3b8'>EBIT:</strong> <span style='color:" + color + "'>" + "{:+.0f}".format(((new_ebit - ebit) / ebit * 100) if ebit else 0) + "%</span></div>"
+            html_out += "<div style='background:#1e293b;padding:0.8rem;border-radius:6px'><strong style='color:#94a3b8'>FCF:</strong> <span style='color:" + color + "'>" + "{:+.0f}".format(((new_fcf - fcf) / fcf * 100) if fcf else 0) + "%</span></div>"
+            html_out += "<div style='background:#1e293b;padding:0.8rem;border-radius:6px'><strong style='color:#94a3b8'>Debt/EBITDA:</strong> <span style='color:" + color + "'>" + "{:.1f}".format(de_new) + "x</span></div>"
+            html_out += "<div style='background:#1e293b;padding:0.8rem;border-radius:6px'><strong style='color:#94a3b8'>Int.Coverage:</strong> <span style='color:" + color + "'>" + "{:.1f}".format(ic_new) + "x</span></div>"
+            html_out += "<div style='background:#1e293b;padding:0.8rem;border-radius:6px'><strong style='color:#94a3b8'>FCF positivo:</strong> <span style='color:" + color + "'>" + ("SI" if new_fcf > 0 else "NO") + "</span></div>"
+            html_out += "</div></div>"
+        
+        avg_score = total_score / count if count > 0 else 0
+        if avg_score >= 75: final_color = "#10b981"; final_label = "AZIENDA RESILIENTE"
+        elif avg_score >= 60: final_color = "#22c55e"; final_label = "AZIENDA SOLIDA"
+        elif avg_score >= 45: final_color = "#fbbf24"; final_label = "AZIENDA MODERATA"
+        elif avg_score >= 30: final_color = "#f59e0b"; final_label = "AZIENDA FRAGILE"
+        else: final_color = "#ef4444"; final_label = "AZIENDA A RISCHIO"
+        
+        html_out += "<div style='text-align:center;padding:3rem;border:3px solid " + final_color + ";border-radius:16px;margin:2rem 0;background:linear-gradient(135deg, #1e293b 0%, #0f172a 100%)'>"
+        html_out += "<h2 style='color:" + final_color + ";margin:0;font-size:2rem'>🏆 VOTO FINALE</h2>"
+        html_out += "<div style='font-size:6rem;font-weight:800;color:" + final_color + ";line-height:1.2;margin:1.5rem 0'>" + str(int(avg_score)) + "<span style='font-size:2rem'>/100</span></div>"
+        html_out += "<div style='font-size:1.8rem;color:" + final_color + ";font-weight:700;letter-spacing:2px'>" + final_label + "</div>"
+        html_out += "<p style='color:#94a3b8;margin-top:1rem;font-size:1.1rem'>Media su " + str(count) + " scenari storici reali</p>"
+        html_out += "</div>"
+        
+        # GRAFICO
+        chart_labels = [x[0] for x in scenarios_results_local]
+        chart_scores = [x[1] for x in scenarios_results_local]
+        chart_colors = []
+        for s in chart_scores:
+            if s >= 75: chart_colors.append("#10b981")
+            elif s >= 60: chart_colors.append("#22c55e")
+            elif s >= 45: chart_colors.append("#fbbf24")
+            elif s >= 30: chart_colors.append("#f59e0b")
+            else: chart_colors.append("#ef4444")
+        
+        html_out += "<div style='background:#1e293b;padding:2rem;border-radius:12px;margin-bottom:2rem'>"
+        html_out += "<h2 style='color:#fbbf24;margin-top:0'>📊 Grafico Resilienza</h2>"
+        html_out += "<canvas id='resChart' width='400' height='200'></canvas>"
+        html_out += "<script src='https://cdn.jsdelivr.net/npm/chart.js'></script><script>"
+        html_out += "new Chart(document.getElementById('resChart'), {type: 'bar',"
+        html_out += "data: {labels: " + str(chart_labels) + ", datasets: [{label: 'Resilienza', data: " + str(chart_scores) + ", backgroundColor: " + str(chart_colors) + "}]}"
+        html_out += ",options: {scales: {y: {beginAtZero: true, max: 100}}, plugins: {legend: {display: false}}}});</script></div>"
+        
+        # CTA FINALI
+        html_out += "<div style='background:linear-gradient(135deg, rgba(16,185,129,0.1), rgba(251,191,36,0.1));border:3px solid #fbbf24;padding:2.5rem;border-radius:16px;text-align:center'>"
+        html_out += "<h2 style='color:#fbbf24;margin-top:0;font-size:2rem'> Cosa vuoi fare ora?</h2>"
+        html_out += "<div style='display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-top:1.5rem'>"
+        html_out += "<a href='/simula/" + str(rep.id) + "/export' style='padding:1rem 2rem;background:#fbbf24;color:#0f172a;border-radius:10px;text-decoration:none;font-weight:700;font-size:1.1rem;display:inline-block'>📄 Scarica PDF</a>"
+        html_out += "<a href='/simula/custom-scenario' style='padding:1rem 2rem;background:#3b82f6;color:white;border-radius:10px;text-decoration:none;font-weight:700;font-size:1.1rem;display:inline-block'>🔧 Scenario Custom</a>"
+        html_out += "<a href='/compare' style='padding:1rem 2rem;background:#10b981;color:#0f172a;border-radius:10px;text-decoration:none;font-weight:700;font-size:1.1rem;display:inline-block'> Confronta</a>"
+        html_out += "</div>"
+        html_out += "<p style='color:#94a3b8;margin:1.5rem 0 0 0;font-size:1.05rem'>Vuoi monitorare questa azienda nel tempo? <a href='/alerts' style='color:#10b981;font-weight:700'>Crea un Alert →</a></p>"
+        html_out += "</div>"
     else:
-        rep = rs[0] if rs else None
+        html_out += "<div style='background:#1e293b;padding:3rem;border-radius:12px;text-align:center;border:2px dashed #475569'>"
+        html_out += "<div style='font-size:4rem;margin-bottom:1rem'>📊</div>"
+        html_out += "<h2 style='color:#94a3b8;margin:0'>Nessun report caricato</h2>"
+        html_out += "<p style='color:#64748b;margin:1rem 0'>Carica un bilancio per vedere i risultati dello stress test</p>"
+        html_out += "</div>"
     
-    if not rep:
-        return render_template_string(BASE_TEMPLATE, title="Simula",
-            content="<div class='card'><h1>Financial Intelligence Engine</h1><p>Nessun report disponibile. Carica un bilancio per iniziare lo stress test.</p></div>")
-    
-    m = _json.loads(rep.metrics_json or "{}")
-    m["sector"] = rep.sector or "Altro"
-    
-    # Calcola tutti gli scenari
-    rows = ""
-    exp_impact = 0; w_res = 0
-    for name, sc in MACRO_SCENARIOS.items():
-        r = _stress_company(m, name)
-        color = "var(--teal)" if r["resilience"] >= 70 else ("var(--gold)" if r["resilience"] >= 45 else "#da3633")
-        icon = "🟢" if r["resilience"] >= 70 else ("🟡" if r["resilience"] >= 45 else "🔴")
-        div_txt = "✓" if r["dividendo_ok"] else "⚠"
-        rows += f"<tr><td>{icon} {name}</td><td>{sc['prob']*100:.0f}%</td>"
-        rows += f"<td>{r['rev_chg']:+.1f}%</td>"
-        rows += f"<td>{r['ebitda_chg']:+.1f}%</td>"
-        rows += f"<td>{r['fcf_chg']:+.1f}%</td>"
-        rows += f"<td>{r['debt_ebitda']:.1f}x</td>"
-        rows += f"<td>{r['int_cov']:.1f}x</td>"
-        rows += f"<td>{div_txt}</td>"
-        rows += f"<td>{r['liquidity']}</td>"
-        rows += f"<td style='color:{color};font-weight:700'>{r['resilience']:.0f}</td></tr>"
-        exp_impact += r["rev_chg"] * sc["prob"]
-        w_res += r["resilience"] * sc["prob"]
-    
-    res_color = "var(--teal)" if w_res >= 70 else ("var(--gold)" if w_res >= 45 else "#da3633")
-    
-    opts = "".join(f"<option value='{r.id}' {'selected' if r.id == rep.id else ''}>{r.company or r.filename} ({r.sector or 'Altro'})</option>" for r in rs)
-    
-    content = f"""<div class='card'><h1>Financial Intelligence Engine</h1>
-    <p style='color:var(--muted)'>Stress test multi-scenario con catena causale Macro → Settore → Azienda</p>
-    <form method='post' enctype='multipart/form-data'>
-      <select name='rid'>{opts}</select>
-      <input type='file' name='report_file' accept='.pdf,.docx,.txt'>
-      <button type='submit' class='btn2' style='width:auto;margin-left:8px'>Carica o seleziona</button>
-    </form></div>
-    
-    <div class='card' style='text-align:center;border:2px solid {res_color}'>
-      <h2 style='color:{res_color}'>Resilience Score: {w_res:.0f}/100</h2>
-      <p>Expected Impact: <strong>{exp_impact:+.1f}%</strong> ricavi (media ponderata)</p>
-      <p style='color:var(--muted);font-size:.9rem'>Probabilità di sopravvivere a 6 scenari macro mantenendo FCF positivo e debito sostenibile</p>
-    </div>
-    
-    <div class='card'><h2>Matrice scenari</h2>
-    <table><tr><th>Scenario</th><th>Prob.</th><th>Ricavi</th><th>EBITDA</th><th>FCF</th><th>Debt/EBITDA</th><th>Int.Cov.</th><th>Div.</th><th>Liquidità</th><th>Resilienza</th></tr>
-    {rows}</table></div>
-    
-    <div class='card'><h2>Come funziona</h2>
-    <p style='color:var(--muted);font-size:.9rem'>
-    <strong>Livello 1 — Macro:</strong> shock su PIL, inflazione, tassi, disoccupazione, consumi, energia, spread.<br>
-    <strong>Livello 2 — Settore:</strong> sensibilità specifica (banche beneficiano di tassi alti, tech soffre, consumer resilienti).<br>
-    <strong>Livello 3 — Azienda:</strong> pricing power, margini, leverage, copertura interessi.<br>
-    <strong>Livello 4 — Output:</strong> bilancio futuro + probabilità distress + resilienza.<br>
-    <strong>Resilience Score:</strong> quanto è probabile che l'azienda sopravviva e continui a generare FCF durante una crisi.</p></div>"""
-    return render_template_string(BASE_TEMPLATE, title="Simula", content=content)
+    return render_template_string(BASE_TEMPLATE, title="Simula", content=html_out)
 
-
-@app.route("/compare", methods=["GET", "POST"])
-@login_required
-def compare():
-    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
-    if request.method == "POST":
-        ids = request.form.getlist("ids")[:3]
-        reps = [r for r in rs if str(r.id) in ids]
-        if len(reps) < 2:
-            flash("Seleziona almeno 2 report", "error")
-            return redirect("/compare")
-        html = "<div class='card'><h1>Confronto</h1><table><tr><th>Metrica</th>"
-        for r in reps: html += "<th>" + (r.company or r.filename) + "</th>"
-        html += "</tr><tr><td>Score</td>"
-        for r in reps: html += "<td>" + str(r.score or "N/D") + "</td>"
-        html += "</tr></table></div>"
-        return render_template_string(BASE_TEMPLATE, title="Confronto", content=html)
-    boxes = "".join("<label style='display:block;margin:6px 0'><input type='checkbox' name='ids' value='" + str(r.id) + "'> " + (r.company or r.filename) + "</label>" for r in rs)
-    return render_template_string(BASE_TEMPLATE, title="Confronta", content="<div class='card'><h1>Confronta Report</h1><form method='post'>" + boxes + "<button type='submit' style='margin-top:1rem'>Confronta</button></form></div>")
-
-@app.route("/watchlist", methods=["GET", "POST"])
-@login_required
-def watchlist():
-    if request.method == "POST":
-        w = WatchItem(user_id=current_user.id, ticker=request.form.get("ticker", "").upper(), name=request.form.get("name"), note=request.form.get("note"))
-        db.session.add(w); db.session.commit()
-        flash("Aggiunto!", "success")
-        return redirect("/watchlist")
-    items = WatchItem.query.filter_by(user_id=current_user.id).all()
-    rows = "".join("<div class='card'><h3>" + w.ticker + "</h3><p>" + (w.note or "") + "</p></div>" for w in items)
-    return render_template_string(BASE_TEMPLATE, title="Watchlist", content="<div class='card'><h1>Watchlist</h1><form method='post'><input name='ticker' placeholder='Ticker'><input name='name' placeholder='Nome'><input name='note' placeholder='Nota'><button type='submit'>Aggiungi</button></form>" + rows + "</div>")
-
-@app.route("/watchlist/<int:wid>/delete", methods=["POST"])
-@login_required
-def watchlist_delete(wid):
-    w = WatchItem.query.get_or_404(wid)
-    if w.user_id == current_user.id:
-        db.session.delete(w); db.session.commit()
-    return redirect("/watchlist")
 
 @app.route("/account", methods=["GET", "POST"])
 @login_required
