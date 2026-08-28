@@ -392,6 +392,41 @@ def register():
       <button type="submit">Crea account</button></form></div>"""
     return render_template_string(BASE_TEMPLATE, title="Registrazione", content=content)
 
+
+@app.route("/reset-db")
+def reset_database():
+    """Rotta di emergenza per resettare il database e creare credenziali"""
+    import os
+    try:
+        # Elimina il database esistente
+        if os.path.exists("instance/auget.db"):
+            os.remove("instance/auget.db")
+            print("✅ Database eliminato")
+        
+        # Ricrea tutte le tabelle
+        with app.app_context():
+            db.create_all()
+            
+            # Crea admin
+            admin = User.query.filter_by(email="admin@sibilla.cc").first()
+            if not admin:
+                admin = User(email="admin@sibilla.cc", subscription_tier="admin")
+                db.session.add(admin)
+            admin.password = hashlib.sha256("admin123".encode()).hexdigest()
+            
+            # Crea demo
+            demo = User.query.filter_by(email="demo@demo.com").first()
+            if not demo:
+                demo = User(email="demo@demo.com", subscription_tier="demo")
+                db.session.add(demo)
+            demo.password = hashlib.sha256("demo123".encode()).hexdigest()
+            
+            db.session.commit()
+            
+            return "<h1>✅ Database resettato con successo!</h1><p>Credenziali create:</p><ul><li><strong>Admin:</strong> admin@sibilla.cc / admin123</li><li><strong>Demo:</strong> demo@demo.com / demo123</li></ul><p><a href='/login'>Vai al Login</a></p>"
+    except Exception as e:
+        return f"<h1>❌ Errore: {str(e)}</h1>"
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
