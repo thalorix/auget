@@ -453,6 +453,37 @@ def reset_database():
     except Exception as e:
         return f"<h1>❌ Errore: {str(e)}</h1>"
 
+
+@app.route("/init-admin")
+def init_admin_debug():
+    """Rotta per forzare la creazione dell'admin con la password corretta"""
+    with app.app_context():
+        db.create_all()
+        email = "admin@sibilla.cc"
+        password = "admin123"
+        
+        user = User.query.filter_by(email=email).first()
+        if not user:
+            user = User(email=email, subscription_tier="admin")
+            db.session.add(user)
+            print("✅ Utente admin creato da zero")
+        
+        # Forza l'aggiornamento della password con l'hash corretto
+        user.password = generate_password_hash(password)
+        db.session.commit()
+        
+        return """
+        <div style="font-family: Arial, sans-serif; padding: 2rem; text-align: center;">
+            <h1 style="color: #10b981;">✅ Admin Inizializzato con Successo!</h1>
+            <p style="font-size: 1.2rem;">Ora puoi accedere con queste credenziali:</p>
+            <div style="background: #f3f4f6; padding: 1rem; border-radius: 8px; display: inline-block; text-align: left; margin: 1rem 0;">
+                <strong>Email:</strong> admin@sibilla.cc<br>
+                <strong>Password:</strong> admin123
+            </div>
+            <br>
+            <a href="/login" style="background: #3b82f6; color: white; padding: 0.8rem 1.5rem; text-decoration: none; border-radius: 6px; font-weight: bold;">Vai al Login</a>
+        </div>
+        """
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
