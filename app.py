@@ -1226,13 +1226,13 @@ def _fetch_all_macro_data():
         db.create_all()
     
     if not User.query.filter_by(email="demo@demo.com").first():
-        d = User(email="demo@demo.com", subscription_tier="demo", subscription_expires=datetime.utcnow() + timedelta(days=3650))
+        d = User(email="demo@demo.com", password=hashlib.sha256("demo123".encode()).hexdigest(), subscription_tier="demo", subscription_expires=datetime.utcnow() + timedelta(days=3650))
         d.set_password("demo123"); db.session.add(d); db.session.commit()
         print("Account demo creato")
     if not User.query.filter_by(email="admin@sibilla.cc").first():
-        adm = User(email="admin@sibilla.cc", subscription_tier="admin", subscription_expires=datetime.utcnow() + timedelta(days=36500))
+        adm = User(email="admin@sibilla.cc", password=hashlib.sha256("admin123".encode()).hexdigest(), subscription_tier="admin", subscription_expires=datetime.utcnow() + timedelta(days=36500))
         adm.set_password("AugetAdmin!2026"); db.session.add(adm); db.session.commit()
-        print("Account admin creato: admin@sibilla.cc / AugetAdmin!2026")
+        print("Account admin creato: admin@sibilla.cc / admin123")
 
 if __name__ == "__main__":
     print("AUGET WEB con login: http://127.0.0.1:5001")
