@@ -46,8 +46,12 @@ if _dbu.startswith("postgres://"):
 app.config["SQLALCHEMY_DATABASE_URI"] = _dbu
 app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
 app.config["UPLOAD_FOLDER"] = os.path.join(BASE, "uploads")
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
+app.config["UPLOAD_FOLDER"] = os.path.join(BASE, "uploads")
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-app.config["UPLOAD_FOLDER"], exist_ok=True)
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
+app.config["UPLOAD_FOLDER"] = os.path.join(BASE, "uploads")
+os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(os.path.join(BASE, "outputs"), exist_ok=True)
 
 db = SQLAlchemy(app)
