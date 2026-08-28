@@ -393,6 +393,32 @@ def register():
     return render_template_string(BASE_TEMPLATE, title="Registrazione", content=content)
 
 
+
+@app.route("/compare", methods=["GET", "POST"])
+@login_required
+def compare():
+    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
+    if request.method == "POST":
+        ids = request.form.getlist("ids")[:3]
+        reps = [r for r in rs if str(r.id) in ids]
+        if len(reps) < 2:
+            flash("Seleziona almeno 2 report", "error")
+            return redirect("/compare")
+        html = "<div class='card'><h1>Confronto Aziende</h1><table style='width:100%;border-collapse:collapse;margin-top:1rem'><tr style='background:var(--bg)'><th style='padding:10px;border:1px solid var(--line)'>Metrica</th>"
+        for r in reps: html += "<th style='padding:10px;border:1px solid var(--line)'>" + (r.company or r.filename) + "</th>"
+        html += "</tr><tr><td style='padding:10px;border:1px solid var(--line)'>Score AUGET</td>"
+        for r in reps: html += "<td style='padding:10px;border:1px solid var(--line);font-weight:bold;color:var(--gold)'>" + str(r.score or "N/D") + "</td>"
+        html += "</tr></table></div>"
+        return render_template_string(BASE_TEMPLATE, title="Confronto", content=html)
+    
+    boxes = "".join("<label style='display:block;margin:8px 0;padding:10px;background:var(--bg);border-radius:6px;cursor:pointer'><input type='checkbox' name='ids' value='" + str(r.id) + "'> <strong>" + (r.company or r.filename) + "</strong></label>" for r in rs)
+    return render_template_string(BASE_TEMPLATE, title="Confronta", content="<div class='card'><h1>Confronta Report</h1><p style='color:var(--muted)'>Seleziona 2 o 3 report da confrontare</p><form method='post'>" + (boxes or "<p>Nessun report disponibile</p>") + "<button type='submit' class='btn2' style='margin-top:1rem'>Confronta</button></form></div>")
+
+@app.route("/watchlist")
+@login_required
+def watchlist():
+    return render_template_string(BASE_TEMPLATE, title="Watchlist", content="<div class='card'><h1>Watchlist</h1><p style='color:var(--muted)'>Funzionalità in arrivo nella prossima versione. Monitora qui i tuoi ticker preferiti.</p></div>")
+
 @app.route("/reset-db")
 def reset_database():
     """Rotta di emergenza per resettare il database e creare credenziali"""
@@ -1222,6 +1248,27 @@ def _site_gate():
 
 with app.app_context():
     from sqlalchemy import inspect, text as sa_text
+
+
+def _safe_yf_fetch():
+    """Recupera dati di mercato in tempo reale con fallback sicuro"""
+    try:
+        import yfinance as yf
+        import warnings
+        warnings.filterwarnings("ignore")
+        t = yf.Tickers("^TNX CL=F GC=F EURUSD=X")
+        h = t.history(period="5d")
+        if h.empty:
+            return {"rates": 4.0, "oil": 75.0, "gold": 2000.0, "fx": 1.08}
+        return {
+            "rates": float(h["^TNX"]["Close"].iloc[-1]) if "^TNX" in h.columns.get_level_values(0) else 4.0,
+            "oil": float(h["CL=F"]["Close"].iloc[-1]) if "CL=F" in h.columns.get_level_values(0) else 75.0,
+            "gold": float(h["GC=F"]["Close"].iloc[-1]) if "GC=F" in h.columns.get_level_values(0) else 2000.0,
+            "fx": float(h["EURUSD=X"]["Close"].iloc[-1]) if "EURUSD=X" in h.columns.get_level_values(0) else 1.08,
+        }
+    except Exception as e:
+        print("[yf-macro]", e)
+        return {"rates": 4.0, "oil": 75.0, "gold": 2000.0, "fx": 1.08}
 
 def _fetch_all_macro_data():
     """Aggrega dati macro da fonti pubbliche con fallback sicuro"""
