@@ -44,8 +44,10 @@ _dbu = os.environ.get("DATABASE_URL", "sqlite:///users.db")
 if _dbu.startswith("postgres://"):
     _dbu = _dbu.replace("postgres://", "postgresql://", 1)
 app.config["SQLALCHEMY_DATABASE_URI"] = _dbu
+app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
 app.config["UPLOAD_FOLDER"] = os.path.join(BASE, "uploads")
-os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+os.makedirs(app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
+app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(os.path.join(BASE, "outputs"), exist_ok=True)
 
 db = SQLAlchemy(app)
@@ -381,7 +383,7 @@ def register():
         db.session.add(user)
         db.session.commit()
         session["new_codes"] = codes
-        login_user(user)
+        login_user(user, remember=request.form.get('remember') == 'on')
         send_email(email, "Benvenuto in AUGET", "<p>Il tuo account e pronto.</p>")
         flash("Registrazione completata!", "success")
         return redirect("/login")
@@ -496,7 +498,7 @@ def login():
             if not cfg.site_open and t != "admin" and not (t == "demo" and cfg.demo_enabled):
                 flash("Sito in manutenzione.", "error")
                 return redirect(url_for("index"))
-            login_user(user)
+            login_user(user, remember=request.form.get('remember') == 'on')
             if not user.subscription_active:
                 return redirect(url_for("pricing"))
             return redirect(url_for("analyze_page"))
@@ -558,7 +560,8 @@ def do_analyze():
     if lim is not None and _used_this_month(current_user.id) >= lim:
         flash(f"Limite raggiunto ({lim}/mese).", "error")
         return redirect(url_for("pricing"))
-    path = os.path.join(app.config["UPLOAD_FOLDER"], f.filename)
+    path = os.path.join(app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
+app.config["UPLOAD_FOLDER"], f.filename)
     f.save(path)
     try:
         res = engine.analyze_document(path)
@@ -889,7 +892,8 @@ def simula():
         if "report_file" in request.files:
             f_obj = request.files["report_file"]
             if f_obj and f_obj.filename:
-                path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
+                path = os.path.join(app.config["REMEMBER_COOKIE_DURATION"] = timedelta(days=30)
+app.config["UPLOAD_FOLDER"], f_obj.filename)
                 f_obj.save(path)
                 try:
                     res = engine.analyze_document(path)
