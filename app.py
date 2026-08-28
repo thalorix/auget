@@ -49,6 +49,10 @@ os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 os.makedirs(os.path.join(BASE, "outputs"), exist_ok=True)
 
 db = SQLAlchemy(app)
+# Inizializza il database creando tutte le tabelle mancanti
+with app.app_context():
+    db.create_all()
+
 login_manager = LoginManager(app)
 login_manager.login_view = "login"
 
