@@ -564,8 +564,8 @@ def do_analyze():
     if lim is not None and _used_this_month(current_user.id) >= lim:
         flash(f"Limite raggiunto ({lim}/mese).", "error")
         return redirect(url_for("pricing"))
-                path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
-                path = os.path.join(app.config["UPLOAD_FOLDER"], f.filename)
+            path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
+            path = os.path.join(app.config["UPLOAD_FOLDER"], f.filename)
     f.save(path)
     try:
         res = engine.analyze_document(path)
@@ -896,8 +896,8 @@ def simula():
         if "report_file" in request.files:
             f_obj = request.files["report_file"]
             if f_obj and f_obj.filename:
-                path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
-                path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
+            path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
+            path = os.path.join(app.config["UPLOAD_FOLDER"], f_obj.filename)
                 f_obj.save(path)
                 try:
                     res = engine.analyze_document(path)
