@@ -384,7 +384,7 @@ def register():
         login_user(user)
         send_email(email, "Benvenuto in AUGET", "<p>Il tuo account e pronto.</p>")
         flash("Registrazione completata!", "success")
-        return redirect("/codes")
+        return redirect("/login")
     content = """<div class="card"><h1>Registrati</h1>
     <form method="post"><input type="email" name="email" placeholder="Email" required>
       <input type="password" name="password" placeholder="Password" required>
