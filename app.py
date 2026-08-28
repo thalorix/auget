@@ -1244,8 +1244,30 @@ if __name__ == "__main__":
 # ==============================================================================
 import sys
 try:
-    with app.app_context():
-        db.create_all()
+    
         print("✅ Database tables created/verified successfully.", file=sys.stderr)
 except Exception as e:
     print(f"❌ FAILED to create database tables: {e}", file=sys.stderr)
+
+# ==============================================================================
+# INIZIALIZZAZIONE DATABASE E CREDENZIALI GARANTITE
+# ==============================================================================
+with app.app_context():
+    db.create_all()
+    
+    # Forza la creazione o l'aggiornamento dell'utente Admin
+    admin = User.query.filter_by(email="admin@sibilla.cc").first()
+    if not admin:
+        admin = User(email="admin@sibilla.cc", subscription_tier="admin")
+        db.session.add(admin)
+    admin.password = hashlib.sha256("admin123".encode()).hexdigest()
+    
+    # Forza la creazione o l'aggiornamento dell'utente Demo
+    demo = User.query.filter_by(email="demo@demo.com").first()
+    if not demo:
+        demo = User(email="demo@demo.com", subscription_tier="demo")
+        db.session.add(demo)
+    demo.password = hashlib.sha256("demo123".encode()).hexdigest()
+    
+    db.session.commit()
+    print("✅ Database pronto. Credenziali garantite: admin@sibilla.cc / admin123")
