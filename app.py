@@ -360,6 +360,112 @@ def register():
       <button type="submit">Crea account</button></form></div>"""
     return render_template_string(BASE_TEMPLATE, title="Registrazione", content=content)
 
+
+@app.route("/assistenza")
+def assistenza():
+    content = "<div class='card'><h1>Assistenza</h1>"
+    content += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:2rem;margin:2rem 0'>"
+    content += "<div class='card'><h2 style='color:var(--teal)'>📚 Documentazione</h2><p>Guide e tutorial su come usare AUGET.</p><a href='/guida' class='btn2' style='display:inline-block;margin-top:1rem'>Vai alla Guida</a></div>"
+    content += "<div class='card'><h2 style='color:var(--gold)'>📧 Email Support</h2><p>Rispondiamo entro 24 ore.</p><a href='mailto:support@sibilla.cc' class='btn2' style='display:inline-block;margin-top:1rem;background:var(--gold);color:#0b1220'>Scrivici</a></div>"
+    content += "<div class='card'><h2 style='color:var(--blue)'>💬 FAQ</h2><p>Domande frequenti e piani.</p><a href='/prezzi' class='btn2' style='display:inline-block;margin-top:1rem'>Vedi Prezzi</a></div>"
+    content += "</div>"
+    content += "<div class='card' style='background:linear-gradient(135deg, rgba(45,212,167,0.1), rgba(240,180,41,0.1));border:2px solid var(--teal);padding:2rem;text-align:center'>"
+    content += "<h2 style='color:var(--teal);margin-top:0'>Demo Personalizzata?</h2>"
+    content += "<p style='font-size:1.1rem'>Prenota una demo gratuita di 30 minuti.</p>"
+    content += "<a href='mailto:support@sibilla.cc?subject=Demo AUGET' class='btn2' style='padding:1rem 2rem;font-size:1.1rem'>Prenota Demo</a>"
+    content += "</div></div>"
+    return render_template_string(BASE_TEMPLATE, title="Assistenza", content=content)
+
+@app.route("/feedback", methods=["GET", "POST"])
+@login_required
+def feedback():
+    if request.method == "POST":
+        msg = request.form.get("message", "")
+        rating = request.form.get("rating", "5")
+        flash(f"Grazie per il feedback! Valutazione: {rating}/5", "success")
+        return redirect("/feedback")
+    
+    content = "<div class='card'><h1>Feedback</h1>"
+    content += "<p style='color:var(--muted)'>Aiutaci a migliorare AUGET! Il tuo parere è fondamentale.</p>"
+    content += "<form method='post' style='margin-top:2rem'>"
+    content += "<label style='display:block;margin-bottom:0.5rem;font-weight:600'>Come valuti AUGET?</label>"
+    content += "<div style='display:flex;gap:1rem;margin-bottom:1.5rem'>"
+    for i in range(5, 0, -1):
+        content += f"<label style='cursor:pointer'><input type='radio' name='rating' value='{i}' style='margin-right:5px'> {'⭐' * i}</label>"
+    content += "</div>"
+    content += "<label style='display:block;margin-bottom:0.5rem;font-weight:600'>Cosa ne pensi?</label>"
+    content += "<textarea name='message' placeholder='Cosa ti è piaciuto? Cosa vorresti migliorare?' style='width:100%;height:200px;margin-bottom:1rem;padding:1rem;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--text)'></textarea>"
+    content += "<button type='submit' class='btn2'>Invia Feedback</button>"
+    content += "</form>"
+    content += "<p style='color:var(--muted);margin-top:1rem'>Oppure scrivici a <a href='mailto:support@sibilla.cc' style='color:var(--teal)'>support@sibilla.cc</a></p>"
+    content += "</div>"
+    return render_template_string(BASE_TEMPLATE, title="Feedback", content=content)
+
+@app.route("/compare", methods=["GET", "POST"])
+@login_required
+def compare():
+    rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
+    if request.method == "POST":
+        ids = request.form.getlist("ids")[:3]
+        reps = [r for r in rs if str(r.id) in ids]
+        if len(reps) < 2:
+            flash("Seleziona almeno 2 report", "error")
+            return redirect("/compare")
+        
+        html = "<div class='card'><h1>�� Confronto Aziende</h1>"
+        html += "<table style='width:100%;border-collapse:collapse;margin-top:1.5rem'><tr style='background:var(--bg)'>"
+        html += "<th style='padding:1rem;text-align:left;border-bottom:2px solid var(--line)'>Metrica</th>"
+        for r in reps:
+            html += f"<th style='padding:1rem;border-bottom:2px solid var(--line)'>{r.company or r.filename}</th>"
+        html += "</tr>"
+        
+        metrics = [("score", "Score AUGET", "var(--gold)"), ("sector", "Settore", "var(--teal)")]
+        for m, label, color in metrics:
+            html += f"<tr><td style='padding:0.8rem;color:var(--muted)'>{label}</td>"
+            for r in reps:
+                val = getattr(r, m, "N/D")
+                html += f"<td style='padding:0.8rem;font-weight:600;color:{color}'>{val}</td>"
+            html += "</tr>"
+        
+        html += "</table></div>"
+        return render_template_string(BASE_TEMPLATE, title="Confronto", content=html)
+    
+    boxes = ""
+    for r in rs:
+        boxes += f"<label style='display:block;margin:0.8rem 0;padding:1rem;background:var(--bg);border-radius:8px;cursor:pointer;border:2px solid transparent;transition:all 0.3s'><input type='checkbox' name='ids' value='{r.id}' style='margin-right:10px;width:18px;height:18px'> <strong>{r.company or r.filename}</strong><br><span style='color:var(--muted);font-size:0.9rem'>{r.sector or 'Altro'} • Score: {r.score or 'N/D'}</span></label>"
+    
+    return render_template_string(BASE_TEMPLATE, title="Confronta", content=f"<div class='card'><h1>🔍 Confronta Report</h1><p style='color:var(--muted)'>Seleziona 2 o 3 aziende da confrontare</p><form method='post'>{(boxes or '<p style='color:var(--muted)'>Nessun report disponibile. Carica prima un bilancio.</p>')}<button type='submit' class='btn2' style='margin-top:1.5rem'>Confronta Selezionati</button></form></div>")
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    user = current_user
+    total_reports = Report.query.filter_by(user_id=user.id).count()
+    total_simulations = SavedSimulation.query.filter_by(user_id=user.id).count() if 'SavedSimulation' in globals() else 0
+    recent_reports = Report.query.filter_by(user_id=user.id).order_by(Report.created_at.desc()).limit(5).all()
+    
+    content = "<div class='card'><h1> Dashboard</h1>"
+    content += f"<p style='color:var(--muted);font-size:1.1rem'>Benvenuto, {user.email}</p>"
+    
+    # Stats
+    content += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1.5rem;margin:2rem 0'>"
+    content += f"<div class='card' style='text-align:center;background:linear-gradient(135deg, rgba(45,212,167,0.1), transparent);border:2px solid var(--teal)'><h3 style='color:var(--teal);font-size:2.5rem;margin:0.5rem 0'>{total_reports}</h3><p style='color:var(--muted);margin:0'>Report Analizzati</p></div>"
+    content += f"<div class='card' style='text-align:center;background:linear-gradient(135deg, rgba(240,180,41,0.1), transparent);border:2px solid var(--gold)'><h3 style='color:var(--gold);font-size:2.5rem;margin:0.5rem 0'>{total_simulations}</h3><p style='color:var(--muted);margin:0'>Simulazioni</p></div>"
+    content += f"<div class='card' style='text-align:center;background:linear-gradient(135deg, rgba(59,130,246,0.1), transparent);border:2px solid var(--blue)'><h3 style='color:var(--blue);font-size:1.5rem;margin:0.5rem 0'>{(user.subscription_tier or 'free').upper()}</h3><p style='color:var(--muted);margin:0'>Piano Attivo</p></div>"
+    content += "</div>"
+    
+    # Recent reports
+    if recent_reports:
+        content += "<h2 style='margin-top:2rem'>📈 Report Recenti</h2><div style='display:grid;gap:1rem;margin-top:1rem'>"
+        for r in recent_reports:
+            score_color = "#10b981" if (r.score or 0) >= 70 else ("#fbbf24" if (r.score or 0) >= 45 else "#ef4444")
+            content += f"<div class='card' style='display:flex;justify-content:space-between;align-items:center;padding:1rem'><div><h3 style='margin:0'>{r.company or r.filename}</h3><p style='color:var(--muted);margin:0.3rem 0 0 0'>{r.sector or 'Altro'} • {r.created_at.strftime('%d/%m/%Y')}</p></div><div style='font-size:2rem;font-weight:800;color:{score_color}'>{r.score or 'N/D'}/100</div></div>"
+        content += "</div>"
+    
+    content += "<div style='margin-top:2rem;text-align:center'><a href='/simula' class='btn2' style='padding:1rem 2rem;font-size:1.1rem'>Nuova Simulazione</a> <a href='/reports' class='btn2' style='padding:1rem 2rem;font-size:1.1rem;background:var(--blue)'>Tutti i Report</a></div>"
+    content += "</div>"
+    return render_template_string(BASE_TEMPLATE, title="Dashboard", content=content)
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
