@@ -434,7 +434,7 @@ def compare():
     for r in rs:
         boxes += f"<label style='display:block;margin:0.8rem 0;padding:1rem;background:var(--bg);border-radius:8px;cursor:pointer;border:2px solid transparent;transition:all 0.3s'><input type='checkbox' name='ids' value='{r.id}' style='margin-right:10px;width:18px;height:18px'> <strong>{r.company or r.filename}</strong><br><span style='color:var(--muted);font-size:0.9rem'>{r.sector or 'Altro'} • Score: {r.score or 'N/D'}</span></label>"
     
-    return render_template_string(BASE_TEMPLATE, title="Confronta", content=f"<div class='card'><h1>🔍 Confronta Report</h1><p style='color:var(--muted)'>Seleziona 2 o 3 aziende da confrontare</p><form method='post'>{(boxes or '<p style='color:var(--muted)'>Nessun report disponibile. Carica prima un bilancio.</p>')}<button type='submit' class='btn2' style='margin-top:1.5rem'>Confronta Selezionati</button></form></div>")
+    return render_template_string(BASE_TEMPLATE, title="Confronta", content=f"<div class='card'><h1>🔍 Confronta Report</h1><p style='color:var(--muted)'>Seleziona 2 o 3 aziende da confrontare</p><form method='post'>{(boxes or '<p style=\'color:var(--muted)\'>Nessun report disponibile. Carica prima un bilancio.</p>')}<button type='submit' class='btn2' style='margin-top:1.5rem'>Confronta Selezionati</button></form></div>")
 
 @app.route("/dashboard")
 @login_required
