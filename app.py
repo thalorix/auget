@@ -918,12 +918,10 @@ def simula():
     else:
         rep = rs[0] if rs else None
     
-    if not rep:
-        return render_template_string(BASE_TEMPLATE, title="Simula",
-            content="<div class='card'><h1>Financial Intelligence Engine</h1><p>Nessun report disponibile. Carica un bilancio per iniziare lo stress test.</p></div>")
+    # Se non c'è un report, mostriamo solo il form di upload
     
-    m = _json.loads(rep.metrics_json or "{}")
-    m["sector"] = rep.sector or "Altro"
+    m = _json.loads(rep.metrics_json or "{}") if rep else {}
+    if rep: m["sector"] = rep.sector or "Altro"
     
     # Calcola tutti gli scenari
     rows = ""
