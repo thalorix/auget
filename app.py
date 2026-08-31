@@ -473,7 +473,9 @@ def compare():
     for r in rs:
         boxes += f"<label style='display:block;margin:0.8rem 0;padding:1rem;background:var(--bg);border-radius:8px;cursor:pointer;border:2px solid transparent;transition:all 0.3s'><input type='checkbox' name='ids' value='{r.id}' style='margin-right:10px;width:18px;height:18px'> <strong>{r.company or r.filename}</strong><br><span style='color:var(--muted);font-size:0.9rem'>{r.sector or 'Altro'} • Score: {r.score or 'N/D'}</span></label>"
     
-    return render_template_string(BASE_TEMPLATE, title="Confronta", content=f"<div class='card'><h1>🔍 Confronta Report</h1><p style='color:var(--muted)'>Seleziona 2 o 3 aziende da confrontare</p><form method='post'>{(boxes or '<p style=\'color:var(--muted)\'>Nessun report disponibile. Carica prima un bilancio.</p>')}<button type='submit' class='btn2' style='margin-top:1.5rem'>Confronta Selezionati</button></form></div>")
+    no_reports_msg = '<p style="color:var(--muted)">Nessun report disponibile. Carica prima un bilancio.</p>'
+    content_compare = f"<div class='card'><h1>🔍 Confronta Report</h1><p style='color:var(--muted)'>Seleziona 2 o 3 aziende da confrontare</p><form method='post'>{(boxes or no_reports_msg)}<button type='submit' class='btn2' style='margin-top:1.5rem'>Confronta Selezionati</button></form></div>"
+    return render_template_string(BASE_TEMPLATE, title="Confronta", content=content_compare)
 
 @app.route("/dashboard")
 @login_required
@@ -863,6 +865,17 @@ def _stress_company(m, scenario):
         "resilience": max(0, min(100, resilience)),
     }
 
+
+    # Benchmark settoriali per confronto
+    sector_benchmarks = {
+        "Tech": {"avg_score": 72, "avg_margin": 0.25, "avg_debt_ebitda": 1.5},
+        "Finance": {"avg_score": 68, "avg_margin": 0.30, "avg_debt_ebitda": 8.0},
+        "Energy": {"avg_score": 65, "avg_margin": 0.15, "avg_debt_ebitda": 2.5},
+        "Healthcare": {"avg_score": 70, "avg_margin": 0.20, "avg_debt_ebitda": 2.0},
+        "Consumer": {"avg_score": 67, "avg_margin": 0.12, "avg_debt_ebitda": 2.2},
+        "Industrial": {"avg_score": 64, "avg_margin": 0.10, "avg_debt_ebitda": 2.8},
+        "Altro": {"avg_score": 66, "avg_margin": 0.15, "avg_debt_ebitda": 2.5}
+    }
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
