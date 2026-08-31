@@ -39,6 +39,11 @@ sys.path.insert(0, BASE)
 import test1 as engine
 
 app = Flask(__name__)
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"]
+)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-key")
 _dbu = os.environ.get("DATABASE_URL", "sqlite:///users.db")
 if _dbu.startswith("postgres://"):
