@@ -1,5 +1,3 @@
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 import os, sys
 from datetime import datetime, timedelta
 from flask import Flask, request, redirect, url_for, render_template_string, flash, send_file, session
@@ -41,11 +39,6 @@ sys.path.insert(0, BASE)
 import test1 as engine
 
 app = Flask(__name__)
-limiter = Limiter(
-    app=app,
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-key")
 _dbu = os.environ.get("DATABASE_URL", "sqlite:///users.db")
 if _dbu.startswith("postgres://"):
@@ -274,6 +267,41 @@ td,th{border:1px solid var(--line);padding:8px;text-align:left}
   {% endwith %}
   {{ content|safe }}
 </div>
+
+<script>
+(function() {
+  var form = document.querySelector('form[action="/do_analyze"]');
+  var btn = document.getElementById('analyze-btn');
+  var container = document.getElementById('progress-container');
+  var bar = document.getElementById('progress-bar');
+  var text = document.getElementById('progress-text');
+  var progress = 0;
+  var interval;
+  
+  if (form && btn) {
+    form.addEventListener('submit', function(e) {
+      var fileInput = form.querySelector('input[type="file"]');
+      if (fileInput && fileInput.files.length > 0) {
+        btn.disabled = true;
+        btn.textContent = "Analisi in corso...";
+        container.style.display = 'block';
+        
+        interval = setInterval(function() {
+          progress += 5;
+          if (progress > 100) progress = 100;
+          bar.style.width = progress + '%';
+          bar.textContent = progress + '%';
+          
+          if (progress < 30) text.textContent = " Estrazione testo dal PDF...";
+          else if (progress < 60) text.textContent = "📊 Analisi metriche finanziarie...";
+          else if (progress < 85) text.textContent = "🧮 Calcolo indicatori e score...";
+          else text.textContent = "✅ Completamento...";
+        }, 300);
+      }
+    });
+  }
+})();
+</script>
 </body></html>"""
 
 @app.route("/favicon.ico")
@@ -573,7 +601,13 @@ def analyze_page():
     content = f"""<div class="card"><h1>Analizza Bilancio</h1>{counter}
     <form method="post" enctype="multipart/form-data" action="/do_analyze">
       <input type="file" name="report" accept=".pdf,.docx,.txt,.html,.htm" required>
-      <button type="submit" style="margin-top:1rem">Analizza</button></form></div>"""
+      <button type="submit" id="analyze-btn" style="margin-top:1rem">Analizza</button>
+      <div id="progress-container" style="display:none;margin-top:1rem">
+        <div style="background:var(--bg);border-radius:8px;overflow:hidden;height:30px;border:2px solid var(--line)">
+          <div id="progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg, #10b981, #059669);transition:width 0.3s ease;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:0.9rem">0%</div>
+        </div>
+        <p id="progress-text" style="text-align:center;margin-top:0.5rem;color:var(--muted);font-size:0.95rem">Inizio analisi...</p>
+      </div></form></div>"""
     return render_template_string(BASE_TEMPLATE, title="Analizza", content=content)
 
 @app.route("/do_analyze", methods=["POST"])
@@ -925,10 +959,12 @@ def simula():
     else:
         rep = rs[0] if rs else None
     
-    # Se non c'è un report, mostriamo solo il form di upload
+    if not rep:
+        return render_template_string(BASE_TEMPLATE, title="Simula",
+            content="<div class='card'><h1>Financial Intelligence Engine</h1><p>Nessun report disponibile. Carica un bilancio per iniziare lo stress test.</p></div>")
     
-    m = _json.loads(rep.metrics_json or "{}") if rep else {}
-    if rep: m["sector"] = rep.sector or "Altro"
+    m = _json.loads(rep.metrics_json or "{}")
+    m["sector"] = rep.sector or "Altro"
     
     # Calcola tutti gli scenari
     rows = ""
