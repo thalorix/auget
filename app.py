@@ -286,17 +286,21 @@ td,th{border:1px solid var(--line);padding:8px;text-align:left}
         btn.textContent = "Analisi in corso...";
         container.style.display = 'block';
         
+        // La barra va lentamente fino al 90% e si ferma lì
+        // Aspetta che il server risponda (la pagina si ricarica)
         interval = setInterval(function() {
-          progress += 5;
-          if (progress > 100) progress = 100;
+          progress += 1;
+          if (progress > 90) progress = 90;
           bar.style.width = progress + '%';
           bar.textContent = progress + '%';
           
-          if (progress < 30) text.textContent = " Estrazione testo dal PDF...";
-          else if (progress < 60) text.textContent = "📊 Analisi metriche finanziarie...";
-          else if (progress < 85) text.textContent = "🧮 Calcolo indicatori e score...";
-          else text.textContent = "✅ Completamento...";
-        }, 300);
+          if (progress < 15) text.textContent = "📄 Estrazione testo dal PDF...";
+          else if (progress < 35) text.textContent = "📊 Analisi metriche finanziarie...";
+          else if (progress < 55) text.textContent = "🧮 Calcolo indicatori e score...";
+          else if (progress < 75) text.textContent = "🔍 Verifica coerenza dati...";
+          else if (progress < 90) text.textContent = " Generazione report...";
+          else text.textContent = "⏳ Analisi quasi completata, attendi i risultati...";
+        }, 500); // 1% ogni 500ms = 45 secondi per arrivare al 90%
       }
     });
   }
