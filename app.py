@@ -335,6 +335,53 @@ def index():
 
 @app.route("/guida")
 def guida():
+    content = """<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>
+    <h1 style='color:#fbbf24;margin:0;font-size:2.5rem'>Guida ai Criteri di Analisi</h1>
+    <p style='color:#e2e8f0;font-size:1.2rem;margin:1rem 0 0 0'>Impara a interpretare i risultati di AUGET</p>
+    </div>"""
+    
+    content += '<div class="card" style="margin-bottom:2rem">'
+    content += '<h2 style="color:var(--gold);margin-top:0">Score AUGET (0-100)</h2>'
+    content += '<p style="font-size:1.05rem;line-height:1.8">Lo <strong>Score AUGET</strong> è una sintesi da 0 a 100 della qualità complessiva dell\'azienda.</p>'
+    content += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;margin:1.5rem 0">'
+    content += '<div style="background:rgba(16,185,129,0.1);padding:1rem;border-radius:8px;border-left:4px solid #10b981"><h3 style="color:#10b981;margin:0 0 0.5rem 0">85-100: Eccellente</h3><p style="margin:0;font-size:0.95rem">Azienda solida, bilanci sani, ottima redditività.</p></div>'
+    content += '<div style="background:rgba(251,191,36,0.1);padding:1rem;border-radius:8px;border-left:4px solid #fbbf24"><h3 style="color:#fbbf24;margin:0 0 0.5rem 0">60-84: Buona</h3><p style="margin:0;font-size:0.95rem">Azienda affidabile con alcuni punti di attenzione.</p></div>'
+    content += '<div style="background:rgba(239,68,68,0.1);padding:1rem;border-radius:8px;border-left:4px solid #ef4444"><h3 style="color:#ef4444;margin:0 0 0.5rem 0">0-59: Da Cautela</h3><p style="margin:0;font-size:0.95rem">Azienda con criticità significative.</p></div>'
+    content += '</div></div>'
+    
+    content += '<div class="card" style="margin-bottom:2rem"><h2 style="color:var(--gold);margin-top:0">Valore Intrinseco</h2>'
+    content += '<p style="font-size:1.05rem;line-height:1.8">Il <strong>Valore Intrinseco</strong> è il prezzo "giusto" dell\'azione basato sul flusso di cassa scontato (DCF).</p>'
+    content += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;margin:1rem 0"><h4 style="margin-top:0">Come si calcola:</h4><ol style="margin:0;padding-left:1.5rem;line-height:1.8"><li>Stima dei flussi di cassa liberi (FCF) per 10 anni</li><li>Applicazione di un tasso di sconto</li><li>Calcolo del valore terminale</li><li>Divisione per il numero di azioni</li></ol></div></div>'
+    
+    content += '<div class="card" style="margin-bottom:2rem"><h2 style="color:var(--gold);margin-top:0">Margine di Sicurezza</h2>'
+    content += '<p style="font-size:1.05rem;line-height:1.8">Lo sconto (o premio) del prezzo di mercato rispetto al valore intrinseco.</p>'
+    content += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:1.5rem 0">'
+    content += '<div style="background:rgba(16,185,129,0.1);padding:1rem;border-radius:8px"><h3 style="color:#10b981;margin:0 0 0.5rem 0">Margine Positivo (>20%)</h3><p style="margin:0;font-size:0.95rem">Azione sottovalutata. Opportunità di acquisto.</p></div>'
+    content += '<div style="background:rgba(239,68,68,0.1);padding:1rem;border-radius:8px"><h3 style="color:#ef4444;margin:0 0 0.5rem 0">Margine Negativo</h3><p style="margin:0;font-size:0.95rem">Azione sopravvalutata. Meglio aspettare.</p></div>'
+    content += '</div></div>'
+    
+    content += '<div class="card" style="margin-bottom:2rem"><h2 style="color:var(--gold);margin-top:0">ROE (Return on Equity)</h2>'
+    content += '<p style="font-size:1.05rem;line-height:1.8">Il <strong>ROE</strong> (Utile Netto / Patrimonio Netto) misura la redditività del capitale.</p>'
+    content += '<ul style="line-height:2"><li><strong style="color:#10b981">ROE > 20%</strong> - Eccellente</li><li><strong style="color:#fbbf24">ROE 15-20%</strong> - Ottimo</li><li><strong style="color:#3b82f6">ROE 10-15%</strong> - Buono</li><li><strong style="color:#ef4444">ROE < 10%</strong> - Scarso</li></ul></div>'
+    
+    content += '<div style="background:rgba(45,212,167,0.1);padding:2rem;border-radius:12px;margin:2rem 0;border:2px solid var(--teal)">'
+    content += '<h2 style="color:var(--teal);margin-top:0">Come Usare Questi Dati</h2>'
+    content += '<ol style="margin:0;padding-left:1.5rem;line-height:2;font-size:1.05rem">'
+    content += '<li><strong>Non basarti su un solo indicatore</strong></li>'
+    content += '<li><strong>Confronta con i competitor</strong></li>'
+    content += '<li><strong>Guarda il trend storico</strong></li>'
+    content += '<li><strong>Considera il contesto macro</strong></li>'
+    content += '<li><strong>Applica il margine di sicurezza</strong></li>'
+    content += '</ol></div>'
+    
+    content += '<div style="text-align:center;margin-top:2rem;padding:2rem;background:var(--bg);border-radius:12px">'
+    content += '<h3 style="color:var(--gold);margin-top:0">Pronto a iniziare?</h3>'
+    content += '<p style="margin:1rem 0">Carica il primo bilancio e scopri lo score AUGET.</p>'
+    content += '<a href="/analyze" class="btn2" style="padding:1rem 2rem;font-size:1.1rem">Analizza un Bilancio</a>'
+    content += '</div>'
+    
+    return render_template_string(BASE_TEMPLATE, title="Guida Completa", content=content)
+
     items = [("Score AUGET", "Sintesi da 0 a 100 della qualita aziendale."),
              ("Valore intrinseco", "Quanto vale un'azione secondo il flusso di cassa scontato."),
              ("Margine di sicurezza", "Sconto del prezzo rispetto al valore intrinseco."),
