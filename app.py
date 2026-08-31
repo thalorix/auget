@@ -401,6 +401,45 @@ def feedback():
     content += "</div>"
     return render_template_string(BASE_TEMPLATE, title="Feedback", content=content)
 
+
+@app.route("/watchlist", methods=["GET", "POST"])
+@login_required
+def watchlist():
+    """Gestione watchlist ticker"""
+    if request.method == "POST":
+        ticker = request.form.get("ticker", "").upper().strip()
+        name = request.form.get("name", "").strip()
+        note = request.form.get("note", "").strip()
+        if ticker:
+            flash(f"Ticker {ticker} aggiunto alla watchlist!", "success")
+            return redirect("/watchlist")
+    
+    # Lista demo di ticker famosi (in futuro salvati su DB)
+    demo_tickers = [
+        ("AAPL", "Apple Inc.", "Tech leader"),
+        ("MSFT", "Microsoft", "Cloud & Software"),
+        ("TSLA", "Tesla", "EV & Energia"),
+        ("AMZN", "Amazon", "E-commerce & Cloud"),
+        ("NVDA", "NVIDIA", "AI & Chip"),
+    ]
+    
+    html = "<div class='card'><h1>�� Watchlist</h1>"
+    html += "<p style='color:var(--muted)'>Monitora i ticker che ti interessano</p>"
+    html += "<form method='post' style='display:flex;gap:1rem;margin:1.5rem 0;flex-wrap:wrap'>"
+    html += "<input name='ticker' placeholder='Ticker (es. AAPL)' required style='padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)'>"
+    html += "<input name='name' placeholder='Nome azienda' style='padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)'>"
+    html += "<input name='note' placeholder='Nota (opzionale)' style='padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)'>"
+    html += "<button type='submit' class='btn2'>Aggiungi</button>"
+    html += "</form>"
+    
+    html += "<h2 style='margin-top:2rem'>Ticker Popolari da Monitorare</h2>"
+    html += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:1rem'>"
+    for t, n, d in demo_tickers:
+        html += f"<div class='card' style='border-left:4px solid var(--teal)'><h3 style='margin:0;color:var(--teal)'>{t}</h3><p style='margin:0.3rem 0;color:var(--muted)'>{n}</p><p style='margin:0;font-size:0.9rem'>{d}</p><a href='/simula' class='btn2' style='margin-top:0.8rem;display:inline-block;padding:0.4rem 1rem;font-size:0.9rem'>Analizza</a></div>"
+    html += "</div></div>"
+    
+    return render_template_string(BASE_TEMPLATE, title="Watchlist", content=html)
+
 @app.route("/compare", methods=["GET", "POST"])
 @login_required
 def compare():
