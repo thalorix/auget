@@ -241,7 +241,7 @@ td,th{border:1px solid var(--line);padding:8px;text-align:left}
   <div class="brand">AUGET</div>
   <div class="tools">
     {% if current_user.is_authenticated %}
-      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a><a href="/ranking">Classifica</a><a href="/simula">Simula</a>
+      <a href="/analyze">Analizza</a><a href="/reports">Report</a><a href="/watchlist">Watchlist</a><a href="/compare">Confronta</a><a href="/cronologia">Cronologia</a><a href="/simula">Simula</a>
     {% else %}
       <a href="/">Home</a>
     {% endif %}
