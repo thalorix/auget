@@ -659,6 +659,97 @@ def cronologia():
 @app.route("/watchlist", methods=["GET", "POST"])
 @login_required
 def watchlist():
+    """Watchlist semplice per salvare ticker"""
+    
+    if "watchlist" not in session:
+        session["watchlist"] = []
+    
+    if request.method == "POST":
+        action = request.form.get("action")
+        ticker = request.form.get("ticker", "").upper().strip()
+        
+        if ticker and action == "add":
+            if ticker not in session["watchlist"]:
+                session["watchlist"].append(ticker)
+                session.modified = True
+                flash(f"{ticker} aggiunto alla watchlist!", "success")
+            else:
+                flash(f"{ticker} è già nella watchlist", "info")
+        elif ticker and action == "remove":
+            if ticker in session["watchlist"]:
+                session["watchlist"].remove(ticker)
+                session.modified = True
+                flash(f"{ticker} rimosso dalla watchlist", "success")
+    
+    popular_tickers = {
+        "AAPL": {"name": "Apple Inc.", "sector": "Tecnologia", "desc": "iPhone, Mac, iPad, servizi digitali"},
+        "MSFT": {"name": "Microsoft", "sector": "Tecnologia", "desc": "Software, Cloud Azure, Office 365"},
+        "TSLA": {"name": "Tesla", "sector": "Automotive", "desc": "Auto elettriche, batterie, energia solare"},
+        "AMZN": {"name": "Amazon", "sector": "E-commerce/Cloud", "desc": "Retail online, AWS, streaming"},
+        "GOOGL": {"name": "Alphabet", "sector": "Tecnologia", "desc": "Google, YouTube, pubblicità online"},
+        "NVDA": {"name": "NVIDIA", "sector": "Semiconduttori", "desc": "GPU, AI, chip per gaming e data center"},
+        "META": {"name": "Meta Platforms", "sector": "Tecnologia", "desc": "Facebook, Instagram, metaverso"},
+        "BRK.B": {"name": "Berkshire Hathaway", "sector": "Finanza", "desc": "Conglomerato di Warren Buffett"},
+    }
+    
+    html = "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>"
+    html += "<h1 style='color:#fbbf24;margin:0;font-size:2.5rem'>📊 Watchlist</h1>"
+    html += "<p style='color:#e2e8f0;font-size:1.2rem;margin:1rem 0 0 0'>Salva i ticker che vuoi monitorare e analizzarli</p>"
+    html += "</div>"
+    
+    html += '<div class="card" style="margin-bottom:2rem">'
+    html += '<h2 style="color:var(--gold);margin-top:0">Aggiungi Ticker</h2>'
+    html += '<form method="post" style="display:flex;gap:1rem;align-items:end;flex-wrap:wrap">'
+    html += '<div style="flex:1;min-width:200px">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Ticker (es. AAPL, MSFT, TSLA)</label>'
+    html += '<input type="text" name="ticker" placeholder="Inserisci ticker..." required style="width:100%;padding:1rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text);font-size:1.1rem;font-weight:600" autofocus>'
+    html += '<input type="hidden" name="action" value="add">'
+    html += '</div>'
+    html += '<button type="submit" class="btn2" style="padding:1rem 2rem;font-size:1.1rem;background:var(--teal)">Aggiungi</button>'
+    html += '</form>'
+    html += '</div>'
+    
+    if session["watchlist"]:
+        html += '<div class="card" style="margin-bottom:2rem;border:2px solid var(--teal)">'
+        html += '<h2 style="color:var(--teal);margin-top:0">I Tuoi Ticker Salvati</h2>'
+        html += '<div style="display:grid;gap:1rem;margin:1.5rem 0">'
+        
+        for ticker in session["watchlist"]:
+            info = popular_tickers.get(ticker, {"name": "N/D", "sector": "N/D", "desc": "N/D"})
+            html += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:center">'
+            html += '<div>'
+            html += '<h3 style="color:var(--gold);margin:0 0 0.3rem 0;font-size:1.5rem">' + ticker + '</h3>'
+            html += '<p style="font-weight:600;margin:0 0 0.3rem 0">' + info["name"] + '</p>'
+            html += '<p style="color:var(--muted);margin:0;font-size:0.9rem">' + info["desc"] + '</p>'
+            html += '</div>'
+            html += '<div style="display:flex;gap:0.5rem">'
+            html += '<a href="https://finance.yahoo.com/quote/' + ticker + '" target="_blank" class="btn2" style="background:var(--blue)">Vedi Prezzo</a>'
+            html += '<form method="post" style="display:inline"><input type="hidden" name="ticker" value="' + ticker + '"><input type="hidden" name="action" value="remove"><button type="submit" class="btn2" style="background:#ef4444">Rimuovi</button></form>'
+            html += '</div></div>'
+        html += '</div></div>'
+    else:
+        html += '<div class="card" style="margin-bottom:2rem;text-align:center;padding:2rem">'
+        html += '<p style="color:var(--muted);margin:0">Nessun ticker salvato. Aggiungi il primo ticker sopra!</p>'
+        html += '</div>'
+    
+    html += '<div class="card"><h2 style="color:var(--gold);margin-top:0">Ticker Popolari</h2>'
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1.5rem;margin:1.5rem 0">'
+    for ticker, info in popular_tickers.items():
+        in_watchlist = ticker in session["watchlist"]
+        html += '<div class="card" style="border-left:4px solid var(--teal);padding:1.5rem">'
+        html += '<h3 style="color:var(--teal);margin:0 0 0.5rem 0;font-size:1.5rem">' + ticker + '</h3>'
+        html += '<p style="font-weight:600;margin:0 0 0.3rem 0">' + info["name"] + '</p>'
+        html += '<p style="color:var(--muted);margin:0 0 0.3rem 0;font-size:0.9rem"><strong>Settore:</strong> ' + info["sector"] + '</p>'
+        html += '<p style="color:var(--muted);margin:0 0 1rem 0;font-size:0.9rem">' + info["desc"] + '</p>'
+        if not in_watchlist:
+            html += '<form method="post" style="display:inline"><input type="hidden" name="ticker" value="' + ticker + '"><input type="hidden" name="action" value="add"><button type="submit" class="btn2" style="display:inline-block;padding:0.5rem 1rem;font-size:0.9rem">Aggiungi</button></form> '
+        html += '<a href="https://finance.yahoo.com/quote/' + ticker + '" target="_blank" class="btn2" style="display:inline-block;padding:0.5rem 1rem;font-size:0.9rem;background:var(--blue)">Yahoo Finance</a>'
+        html += '</div>'
+    html += '</div></div>'
+    
+    return render_template_string(BASE_TEMPLATE, title="Watchlist", content=html)
+
+def watchlist():
     """Gestione watchlist ticker con dati yfinance"""
     ticker_data = None
     error_msg = None
