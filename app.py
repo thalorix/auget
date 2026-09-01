@@ -668,12 +668,56 @@ def watchlist():
         if ticker:
             try:
                 import yfinance as yf
+                import requests
+                
+                # Tentativo 1: yfinance
                 stock = yf.Ticker(ticker)
                 info = stock.info
                 
-                if not info or "currentPrice" not in info:
-                    error_msg = f"Ticker {ticker} non trovato. Verifica il simbolo."
+                # Verifichiamo se abbiamo dati validi
+                if not info or info.get("currentPrice") is None:
+                    # Tentativo 2: API diretta di Yahoo Finance
+                    try:
+                        url = f"https://query1.finance.yahoo.com/v10/finance/quoteSummary/{ticker}"
+                        params = {"modules": "price,summaryProfile,financialData", "corsDomain": "finance.yahoo.com"}
+                        resp = requests.get(url, params=params, timeout=10)
+                        data = resp.json()
+                        
+                        if "quoteSummary" in data and "result" in data["quoteSummary"] and data["quoteSummary"]["result"]:
+                            result = data["quoteSummary"]["result"][0]
+                            price_info = result.get("price", {})
+                            profile = result.get("summaryProfile", {})
+                            
+                            ticker_data = {
+                                "ticker": ticker,
+                                "name": price_info.get("longName", profile.get("longBusinessSummary", ticker)),
+                                "price": price_info.get("regularMarketPrice", {}).get("raw", "N/D"),
+                                "currency": price_info.get("currency", "USD"),
+                                "sector": profile.get("sector", "N/D"),
+                                "industry": profile.get("industry", "N/D"),
+                                "description": (profile.get("longBusinessSummary", "Nessuna descrizione disponibile.") or "Nessuna descrizione disponibile.")[:300] + "...",
+                                "marketCap": price_info.get("marketCap", {}).get("raw", 0),
+                                "peRatio": "N/D",
+                                "dividendYield": 0
+                            }
+                            
+                            if ticker_data["marketCap"]:
+                                if ticker_data["marketCap"] >= 1e9:
+                                    ticker_data["marketCap_str"] = f"${ticker_data['marketCap']/1e9:.2f}B"
+                                elif ticker_data["marketCap"] >= 1e6:
+                                    ticker_data["marketCap_str"] = f"${ticker_data['marketCap']/1e6:.2f}M"
+                                else:
+                                    ticker_data["marketCap_str"] = f"${ticker_data['marketCap']}"
+                            else:
+                                ticker_data["marketCap_str"] = "N/D"
+                            
+                            flash(f"{ticker} trovato!", "success")
+                        else:
+                            error_msg = f"Ticker {ticker} non trovato. Verifica il simbolo."
+                    except:
+                        error_msg = f"Impossibile recuperare dati per {ticker}. Riprova più tardi."
                 else:
+                    # yfinance ha funzionato
                     ticker_data = {
                         "ticker": ticker,
                         "name": info.get("shortName", info.get("longName", "N/D")),
@@ -681,7 +725,7 @@ def watchlist():
                         "currency": info.get("currency", "USD"),
                         "sector": info.get("sector", "N/D"),
                         "industry": info.get("industry", "N/D"),
-                        "description": info.get("longBusinessSummary", "Nessuna descrizione disponibile.")[:300] + "...",
+                        "description": (info.get("longBusinessSummary") or "Nessuna descrizione disponibile.")[:300] + "...",
                         "marketCap": info.get("marketCap", 0),
                         "peRatio": info.get("trailingPE", "N/D"),
                         "dividendYield": info.get("dividendYield", 0)
@@ -699,7 +743,7 @@ def watchlist():
                     
                     flash(f"{ticker} trovato!", "success")
             except Exception as e:
-                error_msg = f"Errore nel recupero dati: {str(e)}"
+                error_msg = f"Servizio temporaneamente non disponibile. Riprova più tardi."
     
     popular_tickers = [
         ("AAPL", "Apple Inc.", "Tech leader - iPhone, Mac, iPad"),
