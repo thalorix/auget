@@ -488,6 +488,156 @@ def feedback():
     return render_template_string(BASE_TEMPLATE, title="Feedback", content=content)
 
 
+
+@app.route("/cronologia", methods=["GET", "POST"])
+@login_required
+def cronologia():
+    """Cronologia analisi con filtri e rinomina"""
+    # Gestione rinomina
+    if request.method == "POST":
+        if "rename_id" in request.form:
+            report_id = request.form.get("rename_id")
+            new_name = request.form.get("new_name", "").strip()
+            if new_name and report_id:
+                report = Report.query.get(report_id)
+                if report and report.user_id == current_user.id:
+                    report.company = new_name
+                    db.session.commit()
+                    flash("Report rinominato!", "success")
+                else:
+                    flash("Errore nella rinomina", "error")
+            return redirect("/cronologia")
+        
+        if "delete_id" in request.form:
+            report_id = request.form.get("delete_id")
+            report = Report.query.get(report_id)
+            if report and report.user_id == current_user.id:
+                db.session.delete(report)
+                db.session.commit()
+                flash("Report eliminato", "success")
+            return redirect("/cronologia")
+    
+    # Filtri
+    search_query = request.args.get("search", "").strip()
+    date_filter = request.args.get("date_filter", "").strip()
+    sort_by = request.args.get("sort", "created_at")
+    sort_order = request.args.get("order", "desc")
+    
+    # Query base
+    query = Report.query.filter_by(user_id=current_user.id)
+    
+    # Applica filtri
+    if search_query:
+        query = query.filter(
+            db.or_(
+                Report.company.ilike(f"%{search_query}%"),
+                Report.filename.ilike(f"%{search_query}%")
+            )
+        )
+    
+    if date_filter:
+        try:
+            from datetime import datetime
+            date_obj = datetime.strptime(date_filter, "%Y-%m-%d")
+            query = query.filter(db.func.date(Report.created_at) == date_obj.date())
+        except:
+            pass
+    
+    # Ordinamento
+    if sort_by == "created_at":
+        query = query.order_by(Report.created_at.desc() if sort_order == "desc" else Report.created_at.asc())
+    elif sort_by == "score":
+        query = query.order_by(Report.score.desc() if sort_order == "desc" else Report.score.asc())
+    elif sort_by == "company":
+        query = query.order_by(Report.company.asc() if sort_order == "desc" else Report.company.desc())
+    
+    reports = query.all()
+    
+    # HTML
+    html = """<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>
+    <h1 style='color:#fbbf24;margin:0;font-size:2.5rem'>📚 Cronologia Analisi</h1>
+    <p style='color:#e2e8f0;font-size:1.2rem;margin:1rem 0 0 0'>Tutte le tue analisi salvate automaticamente</p>
+    </div>"""
+    
+    # Filtri e ricerca
+    html += '<div class="card" style="margin-bottom:2rem">'
+    html += '<form method="get" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;align-items:end">'
+    
+    html += '<div><label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Cerca per nome o file</label>'
+    html += '<input type="text" name="search" value="' + (search_query or "") + '" placeholder="Es. Generali, bilancio 2023..." style="width:100%;padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)">'
+    html += '</div>'
+    
+    html += '<div><label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Filtra per data</label>'
+    html += '<input type="date" name="date_filter" value="' + (date_filter or "") + '" style="width:100%;padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)">'
+    html += '</div>'
+    
+    html += '<div><label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Ordina per</label>'
+    html += '<select name="sort" style="width:100%;padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)">'
+    html += '<option value="created_at"' + (' selected' if sort_by == "created_at" else "") + '>Data analisi</option>'
+    html += '<option value="score"' + (' selected' if sort_by == "score" else "") + '>Score</option>'
+    html += '<option value="company"' + (' selected' if sort_by == "company" else "") + '>Nome azienda</option>'
+    html += '</select>'
+    html += '</div>'
+    
+    html += '<div><button type="submit" class="btn2" style="width:100%">Applica Filtri</button></div>'
+    html += '<div><a href="/cronologia" class="btn2" style="width:100%;background:var(--blue)">Reset</a></div>'
+    
+    html += '</form></div>'
+    
+    # Lista report
+    if reports:
+        html += f'<p style="color:var(--muted);margin-bottom:1rem">{len(reports)} analisi trovate</p>'
+        html += '<div style="display:grid;gap:1rem">'
+        
+        for rep in reports:
+            score_color = "#10b981" if (rep.score or 0) >= 70 else ("#fbbf24" if (rep.score or 0) >= 45 else "#ef4444")
+            date_str = rep.created_at.strftime("%d/%m/%Y %H:%M") if rep.created_at else "N/D"
+            
+            html += '<div class="card" style="display:grid;grid-template-columns:1fr auto auto auto;gap:1rem;align-items:center;padding:1.5rem">'
+            
+            # Info principali
+            html += '<div>'
+            html += '<h3 style="margin:0 0 0.5rem 0;color:var(--gold)">' + (rep.company or rep.filename) + '</h3>'
+            html += '<p style="margin:0;color:var(--muted);font-size:0.9rem">' + (rep.sector or "Settore non specificato") + '</p>'
+            html += '<p style="margin:0.3rem 0 0 0;color:var(--muted);font-size:0.85rem">Analizzato il: ' + date_str + '</p>'
+            html += '</div>'
+            
+            # Score
+            html += '<div style="text-align:center;padding:1rem;background:rgba(0,0,0,0.2);border-radius:8px;min-width:100px">'
+            html += '<div style="font-size:2rem;font-weight:800;color:' + score_color + '">' + str(rep.score or "N/D") + '</div>'
+            html += '<div style="font-size:0.8rem;color:var(--muted)">Score</div>'
+            html += '</div>'
+            
+            # Azioni
+            html += '<div style="display:flex;gap:0.5rem">'
+            html += '<form method="post" style="display:inline">'
+            html += '<input type="hidden" name="rename_id" value="' + str(rep.id) + '">'
+            html += '<input type="text" name="new_name" placeholder="Nuovo nome" value="' + (rep.company or "") + '" style="padding:0.5rem;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text);width:150px">'
+            html += '<button type="submit" class="btn2" style="padding:0.5rem 1rem;font-size:0.9rem">Rinomina</button>'
+            html += '</form>'
+            html += '</div>'
+            
+            html += '<div style="display:flex;gap:0.5rem">'
+            html += '<a href="/simula/' + str(rep.id) + '" class="btn2" style="padding:0.5rem 1rem;background:var(--teal)">Vedi</a>'
+            html += '<a href="/simula/' + str(rep.id) + '/export" class="btn2" style="padding:0.5rem 1rem;background:var(--gold);color:#0b1220">PDF</a>'
+            html += """<form method="post" style="display:inline" onsubmit="return confirm(\'Eliminare questo report?\')">""" + "\n"
+            html += '<input type="hidden" name="delete_id" value="' + str(rep.id) + '">'
+            html += '<button type="submit" class="btn2" style="padding:0.5rem 1rem;background:#ef4444">Elimina</button>'
+            html += '</form>'
+            html += '</div>'
+            
+            html += '</div>'
+        
+        html += '</div>'
+    else:
+        html += '<div class="card" style="text-align:center;padding:3rem">'
+        html += '<h3 style="color:var(--muted);margin:0 0 1rem 0">Nessuna analisi trovata</h3>'
+        html += '<p style="color:var(--muted);margin:0 0 1.5rem 0">Carica il primo bilancio per iniziare</p>'
+        html += '<a href="/analyze" class="btn2" style="padding:1rem 2rem">Analizza Bilancio</a>'
+        html += '</div>'
+    
+    return render_template_string(BASE_TEMPLATE, title="Cronologia", content=html)
+
 @app.route("/watchlist", methods=["GET", "POST"])
 @login_required
 def watchlist():
