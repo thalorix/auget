@@ -314,24 +314,42 @@ def favicon():
 
 @app.route("/")
 def index():
-    content = """<div class="card hero">
-      <h1 style="font-size:2.8rem;margin:0;letter-spacing:4px">AUGET</h1>
-      <p style="font-size:1.2rem;color:var(--teal)">Capire se un'azienda e solida, quanto vale e se il prezzo e giusto.</p>
-      <p><a href="/register"><button style="width:auto;margin:0 6px">Inizia gratis</button></a>
-      <a href="/login"><button class="btn2" style="width:auto;margin:0 6px">Accedi</button></a></p>
-    </div>
-    <div class="card"><h2>Cosa fa</h2>
-    <ul style="line-height:2">
-      <li><strong style="color:var(--gold)">Punteggio 0-100</strong> con verdetto immediato</li>
-      <li><strong style="color:var(--gold)">40 indicatori</strong> su redditivita, cassa, crescita e valutazione</li>
-      <li><strong style="color:var(--gold)">20 indicatori bancari</strong> (ROE, ROA, CET1, NPL, Cost/Income)</li>
-      <li><strong style="color:var(--gold)">Simulazioni macro</strong> con scenari Bear/Base/Bull</li>
-      <li><strong style="color:var(--gold)">Classifica e confronto</strong> tra aziende</li>
-    </ul></div>
-    <div class="card" style="text-align:center"><h2>Prova ora</h2>
-    <p style="color:var(--muted)">7 giorni gratis, senza carta di credito.</p>
-    <p><a href="/register"><button style="width:auto">Crea il tuo account</button></a></p></div>"""
+    if current_user.is_authenticated:
+        report_count = Report.query.filter_by(user_id=current_user.id).count()
+        if report_count == 0:
+            welcome_msg = "Benvenuto in AUGET!"
+            welcome_sub = "Inizia la tua prova gratuita di 7 giorni. Nessun impegno."
+        else:
+            name = current_user.email.split('@')[0]
+            welcome_msg = "Bentornato, " + name + "!"
+            welcome_sub = "Come vuoi procedere oggi?"
+        content = "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:4rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>"
+        content += "<h1 style='color:#fbbf24;margin:0;font-size:3rem'>" + welcome_msg + "</h1>"
+        content += "<p style='color:#e2e8f0;font-size:1.3rem;margin:1rem 0 0 0'>" + welcome_sub + "</p>"
+        content += "</div>"
+        content += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1.5rem;margin-bottom:2rem'>"
+        content += "<div class='card' style='border:2px solid var(--teal);padding:2rem;text-align:center'><h2 style='color:var(--teal);margin-top:0'>Analizza un Nuovo Bilancio</h2><p style='color:var(--muted)'>Carica un bilancio aziendale e ottieni lo score AUGET in pochi secondi.</p><a href='/analyze' class='btn2' style='margin-top:1rem;display:inline-block'>Analizza Ora</a></div>"
+        content += "<div class='card' style='border:2px solid var(--gold);padding:2rem;text-align:center'><h2 style='color:var(--gold);margin-top:0'>La Tua Cronologia</h2><p style='color:var(--muted)'>Visualizza e gestisci tutte le analisi salvate automaticamente.</p><a href='/cronologia' class='btn2' style='margin-top:1rem;display:inline-block;background:var(--gold);color:#0b1220'>Vedi Cronologia</a></div>"
+        content += "<div class='card' style='border:2px solid var(--blue);padding:2rem;text-align:center'><h2 style='color:var(--blue);margin-top:0'>Stress Test</h2><p style='color:var(--muted)'>Simula scenari macroeconomici e valuta la resilienza aziendale.</p><a href='/simula' class='btn2' style='margin-top:1rem;display:inline-block;background:var(--blue)'>Simula</a></div>"
+        content += "</div>"
+        content += "<div class='card' style='background:var(--bg);padding:2rem;text-align:center'><h3 style='color:var(--gold);margin-top:0'>Cosa puoi fare con AUGET:</h3><ul style='list-style:none;padding:0;margin:1.5rem 0;line-height:2'><li>Punteggio 0-100 con verdetto immediato</li><li>40 indicatori su redditivita, cassa, crescita e valutazione</li><li>Simulazioni macro con scenari Bear/Base/Bull</li><li>Confronto tra aziende dello stesso settore</li></ul><p style='color:var(--muted);margin:1rem 0 0 0'>Hai gia analizzato <strong>" + str(report_count) + "</strong> " + ("azienda" if report_count == 1 else "aziende") + ".</p></div>"
+    else:
+        content = '<div class="card"><h1 style="font-size:2.8rem;margin:0;letter-spacing:4px">AUGET</h1>'
+        content += "<p style=\"font-size:1.2rem;color:var(--teal)\">Capire se un'azienda e solida, quanto vale e se il prezzo e giusto.</p>"
+        content += '<p><a href="/register"><button style="width:auto;margin:0 6px">Inizia gratis</button></a>'
+        content += '<a href="/login"><button class="btn2" style="width:auto;margin:0 6px">Accedi</button></a></p></div>'
+        content += '<div class="card"><h2>Cosa fa</h2><ul>'
+        content += '<li><strong style="color:var(--gold)">Punteggio 0-100</strong> con verdetto immediato</li>'
+        content += '<li><strong style="color:var(--gold)">40 indicatori</strong> su redditivita, cassa, crescita e valutazione</li>'
+        content += '<li><strong style="color:var(--gold)">20 indicatori bancari</strong> (ROE, ROA, CET1, NPL, Cost/Income)</li>'
+        content += '<li><strong style="color:var(--gold)">Simulazioni macro</strong> con scenari Bear/Base/Bull</li>'
+        content += '<li><strong style="color:var(--gold)">Classifica e confronto</strong> tra aziende</li>'
+        content += '</ul></div>'
+        content += '<div class="card" style="text-align:center"><h2 style="color:var(--teal)">Prova ora</h2>'
+        content += '<p style="color:var(--muted)">7 giorni gratis, senza carta di credito.</p>'
+        content += '<a href="/register"><button class="btn2" style="width:auto">Crea il tuo account</button></a></div>'
     return render_template_string(BASE_TEMPLATE, title="AUGET", content=content)
+
 
 @app.route("/guida")
 def guida():
