@@ -659,40 +659,107 @@ def cronologia():
 @app.route("/watchlist", methods=["GET", "POST"])
 @login_required
 def watchlist():
-    """Gestione watchlist ticker"""
+    """Gestione watchlist ticker con dati yfinance"""
+    ticker_data = None
+    error_msg = None
+    
     if request.method == "POST":
         ticker = request.form.get("ticker", "").upper().strip()
-        name = request.form.get("name", "").strip()
-        note = request.form.get("note", "").strip()
         if ticker:
-            flash(f"Ticker {ticker} aggiunto alla watchlist!", "success")
-            return redirect("/watchlist")
+            try:
+                import yfinance as yf
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                
+                if not info or "currentPrice" not in info:
+                    error_msg = f"Ticker {ticker} non trovato. Verifica il simbolo."
+                else:
+                    ticker_data = {
+                        "ticker": ticker,
+                        "name": info.get("shortName", info.get("longName", "N/D")),
+                        "price": info.get("currentPrice", "N/D"),
+                        "currency": info.get("currency", "USD"),
+                        "sector": info.get("sector", "N/D"),
+                        "industry": info.get("industry", "N/D"),
+                        "description": info.get("longBusinessSummary", "Nessuna descrizione disponibile.")[:300] + "...",
+                        "marketCap": info.get("marketCap", 0),
+                        "peRatio": info.get("trailingPE", "N/D"),
+                        "dividendYield": info.get("dividendYield", 0)
+                    }
+                    
+                    if ticker_data["marketCap"]:
+                        if ticker_data["marketCap"] >= 1e9:
+                            ticker_data["marketCap_str"] = f"${ticker_data['marketCap']/1e9:.2f}B"
+                        elif ticker_data["marketCap"] >= 1e6:
+                            ticker_data["marketCap_str"] = f"${ticker_data['marketCap']/1e6:.2f}M"
+                        else:
+                            ticker_data["marketCap_str"] = f"${ticker_data['marketCap']}"
+                    else:
+                        ticker_data["marketCap_str"] = "N/D"
+                    
+                    flash(f"{ticker} trovato!", "success")
+            except Exception as e:
+                error_msg = f"Errore nel recupero dati: {str(e)}"
     
-    # Lista demo di ticker famosi (in futuro salvati su DB)
-    demo_tickers = [
-        ("AAPL", "Apple Inc.", "Tech leader"),
-        ("MSFT", "Microsoft", "Cloud & Software"),
-        ("TSLA", "Tesla", "EV & Energia"),
-        ("AMZN", "Amazon", "E-commerce & Cloud"),
-        ("NVDA", "NVIDIA", "AI & Chip"),
+    popular_tickers = [
+        ("AAPL", "Apple Inc.", "Tech leader - iPhone, Mac, iPad"),
+        ("MSFT", "Microsoft", "Cloud & Software - Azure, Office 365"),
+        ("TSLA", "Tesla", "EV & Energia - Auto elettriche, batterie"),
+        ("AMZN", "Amazon", "E-commerce & Cloud - AWS, retail"),
+        ("NVDA", "NVIDIA", "AI & Chip - GPU, intelligenza artificiale"),
     ]
     
-    html = "<div class='card'><h1>�� Watchlist</h1>"
-    html += "<p style='color:var(--muted)'>Monitora i ticker che ti interessano</p>"
-    html += "<form method='post' style='display:flex;gap:1rem;margin:1.5rem 0;flex-wrap:wrap'>"
-    html += "<input name='ticker' placeholder='Ticker (es. AAPL)' required style='padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)'>"
-    html += "<input name='name' placeholder='Nome azienda' style='padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)'>"
-    html += "<input name='note' placeholder='Nota (opzionale)' style='padding:0.8rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text)'>"
-    html += "<button type='submit' class='btn2'>Aggiungi</button>"
-    html += "</form>"
+    html = "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>"
+    html += "<h1 style='color:#fbbf24;margin:0;font-size:2.5rem'>Watchlist</h1>"
+    html += "<p style='color:#e2e8f0;font-size:1.2rem;margin:1rem 0 0 0'>Monitora i ticker e ottieni informazioni in tempo reale</p>"
+    html += "</div>"
     
-    html += "<h2 style='margin-top:2rem'>Ticker Popolari da Monitorare</h2>"
-    html += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:1rem'>"
-    for t, n, d in demo_tickers:
-        html += f"<div class='card' style='border-left:4px solid var(--teal)'><h3 style='margin:0;color:var(--teal)'>{t}</h3><p style='margin:0.3rem 0;color:var(--muted)'>{n}</p><p style='margin:0;font-size:0.9rem'>{d}</p><a href='/simula' class='btn2' style='margin-top:0.8rem;display:inline-block;padding:0.4rem 1rem;font-size:0.9rem'>Analizza</a></div>"
-    html += "</div></div>"
+    html += '<div class="card" style="margin-bottom:2rem">'
+    html += '<h2 style="color:var(--gold);margin-top:0">Cerca un Ticker</h2>'
+    html += '<form method="post" style="display:flex;gap:1rem;align-items:end;flex-wrap:wrap">'
+    html += '<div style="flex:1;min-width:200px">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Ticker (es. AAPL, MSFT, TSLA)</label>'
+    html += '<input type="text" name="ticker" placeholder="Inserisci ticker..." required style="width:100%;padding:1rem;border-radius:8px;border:2px solid var(--line);background:var(--bg);color:var(--text);font-size:1.1rem;font-weight:600" autofocus>'
+    html += '</div>'
+    html += '<button type="submit" class="btn2" style="padding:1rem 2rem;font-size:1.1rem;background:var(--teal)">Cerca</button>'
+    html += '</form>'
+    html += '</div>'
+    
+    if error_msg:
+        html += '<div class="card" style="border:2px solid #ef4444;background:rgba(239,68,68,0.1);margin-bottom:2rem">'
+        html += '<p style="color:#ef4444;margin:0;font-weight:600">⚠️ ' + error_msg + '</p>'
+        html += '</div>'
+    
+    if ticker_data:
+        html += '<div class="card" style="border:2px solid var(--teal);margin-bottom:2rem;padding:2rem">'
+        html += '<h2 style="color:var(--gold);margin:0 0 1rem 0">' + ticker_data["ticker"] + ' - ' + ticker_data["name"] + '</h2>'
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;margin:1.5rem 0">'
+        html += '<div style="background:var(--bg);padding:1rem;border-radius:8px"><h3 style="color:var(--teal);margin:0 0 0.5rem 0">Prezzo</h3><p style="font-size:2rem;font-weight:800;margin:0">' + str(ticker_data["price"]) + ' ' + ticker_data["currency"] + '</p></div>'
+        html += '<div style="background:var(--bg);padding:1rem;border-radius:8px"><h3 style="color:var(--teal);margin:0 0 0.5rem 0">Settore</h3><p style="font-size:1.2rem;margin:0">' + ticker_data["sector"] + '</p></div>'
+        html += '<div style="background:var(--bg);padding:1rem;border-radius:8px"><h3 style="color:var(--teal);margin:0 0 0.5rem 0">Market Cap</h3><p style="font-size:1.3rem;margin:0">' + ticker_data["marketCap_str"] + '</p></div>'
+        html += '</div>'
+        html += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;margin:1.5rem 0">'
+        html += '<h3 style="color:var(--gold);margin:0 0 0.5rem 0">Descrizione Azienda</h3>'
+        html += '<p style="line-height:1.8;color:var(--muted)">' + ticker_data["description"] + '</p>'
+        html += '</div>'
+        html += '<div style="margin-top:1.5rem;display:flex;gap:1rem">'
+        html += '<a href="/analyze" class="btn2" style="background:var(--teal)">Analizza Bilancio</a>'
+        html += '<a href="https://finance.yahoo.com/quote/' + ticker_data["ticker"] + '" target="_blank" class="btn2" style="background:var(--blue)">Vedi su Yahoo Finance</a>'
+        html += '</div></div>'
+    
+    html += '<div class="card"><h2 style="color:var(--gold);margin-top:0">Ticker Popolari</h2>'
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1.5rem;margin:1.5rem 0">'
+    for ticker, name, desc in popular_tickers:
+        html += '<div class="card" style="border-left:4px solid var(--teal);padding:1.5rem">'
+        html += '<h3 style="color:var(--teal);margin:0 0 0.5rem 0;font-size:1.5rem">' + ticker + '</h3>'
+        html += '<p style="font-weight:600;margin:0 0 0.3rem 0">' + name + '</p>'
+        html += '<p style="color:var(--muted);margin:0 0 1rem 0;font-size:0.9rem">' + desc + '</p>'
+        html += '<a href="/analyze" class="btn2" style="display:inline-block;padding:0.5rem 1rem;font-size:0.9rem">Analizza</a>'
+        html += '</div>'
+    html += '</div></div>'
     
     return render_template_string(BASE_TEMPLATE, title="Watchlist", content=html)
+
 
 @app.route("/compare", methods=["GET", "POST"])
 @login_required
