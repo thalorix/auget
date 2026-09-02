@@ -1358,6 +1358,242 @@ def _stress_company(m, scenario):
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
+    """Stress Test con modifica manuale dei dati per simulare scenari"""
+    
+    rep = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).first()
+    
+    if not rep:
+        return render_template_string(BASE_TEMPLATE, title="Simula", 
+            content="<div class='card'><h2>🛡️ Stress Test Avanzato</h2>"
+            "<p>Carica prima un bilancio in /analyze.</p>"
+            "<a href='/analyze' class='btn2'>Analizza Bilancio</a></div>")
+    
+    m = _json.loads(rep.metrics_json or "{}")
+    
+    # Dati originali dal PDF
+    orig_revenue = float(m.get("revenue") or 0)
+    orig_ebit = float(m.get("ebit") or 0)
+    orig_debt = float(m.get("total_debt") or 0)
+    orig_cash = float(m.get("cassa") or 0)
+    orig_interest = float(m.get("interest") or 0)
+    orig_ebitda = float(m.get("ebitda") or orig_ebit * 1.2)
+    
+    # Se l'utente ha modificato i dati via POST, usiamo quelli
+    if request.method == "POST":
+        revenue = float(request.form.get("revenue") or orig_revenue)
+        ebit = float(request.form.get("ebit") or orig_ebit)
+        total_debt = float(request.form.get("total_debt") or orig_debt)
+        cash = float(request.form.get("cassa") or orig_cash)
+        interest = float(request.form.get("interest") or orig_interest)
+        scenario_name = request.form.get("scenario_name", "Scenario personalizzato")
+    else:
+        revenue = orig_revenue
+        ebit = orig_ebit
+        total_debt = orig_debt
+        cash = orig_cash
+        interest = orig_interest
+        scenario_name = "Scenario Base (dati originali)"
+    
+    # Benchmark di settore
+    sector_benchmarks = {
+        "Tech": 45, "Software": 50, "Services": 35,
+        "Manufacturing": 25, "Industrial": 25, "Automotive": 20,
+        "Retail": 15, "Consumer": 20, "Food": 30,
+        "Finance": 30, "Banking": 35, "Insurance": 40,
+        "Healthcare": 35, "Pharma": 40, "Energy": 20,
+        "Utilities": 30, "Telecom": 25, "Real Estate": 20,
+        "Altro": 30
+    }
+    sector = rep.sector or "Altro"
+    benchmark = sector_benchmarks.get(sector, 30)
+    
+    # Calcolo Breaking Point
+    if interest > 0 and ebit > 0:
+        interest_coverage = ebit / interest
+        min_ebit_to_survive = interest
+        if ebit > min_ebit_to_survive:
+            breaking_point = ((ebit - min_ebit_to_survive) / ebit) * 100
+        else:
+            breaking_point = 0
+    elif interest == 0:
+        interest_coverage = 999
+        breaking_point = 100
+    else:
+        interest_coverage = 0
+        breaking_point = 0
+    
+    # Cash Runway
+    monthly_burn = max((revenue - orig_ebitda) / 12, revenue / 24)
+    cash_runway = cash / monthly_burn if monthly_burn > 0 else 999
+    
+    # Status e colore
+    if breaking_point >= 40:
+        status = "FORTEZZA FINANZIARIA"
+        status_color = "#10b981"
+    elif breaking_point >= 20:
+        status = "RESILIENTE"
+        status_color = "#fbbf24"
+    elif breaking_point >= 5:
+        status = "FRAGILE"
+        status_color = "#f97316"
+    else:
+        status = "A RISCHIO DEFAULT"
+        status_color = "#ef4444"
+    
+    # Confronto con benchmark
+    bp_diff = breaking_point - benchmark
+    if bp_diff > 5:
+        bench_text = "SUPERIORE alla media di +" + str(int(bp_diff)) + "%"
+        bench_color = "#10b981"
+    elif bp_diff < -5:
+        bench_text = "INFERIORE alla media di " + str(int(abs(bp_diff))) + "%"
+        bench_color = "#ef4444"
+    else:
+        bench_text = "IN LINEA con la media"
+        bench_color = "#fbbf24"
+    
+    # Cash Runway display
+    runway_display = min(int(cash_runway), 99) if cash_runway < 999 else "99+"
+    if cash_runway >= 12:
+        runway_color = "#10b981"
+        runway_text = "Ottima autonomia finanziaria"
+    elif cash_runway >= 6:
+        runway_color = "#fbbf24"
+        runway_text = "Autonomia sufficiente, ma da monitorare"
+    else:
+        runway_color = "#ef4444"
+        runway_text = "Autonomia critica - Serve aumentare la liquidità"
+    
+    # HTML
+    html = "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>"
+    html += "<h1 style='color:#fbbf24;margin:0;font-size:2.5rem'>🛡️ Stress Test Avanzato</h1>"
+    html += "<p style='color:#e2e8f0;font-size:1.2rem;margin:1rem 0 0 0'>Modifica i dati per simulare scenari</p>"
+    html += "</div>"
+    
+    # FORM con dati modificabili
+    html += '<form method="post" class="card" style="margin-bottom:2rem;padding:2rem">'
+    html += '<h2 style="color:var(--gold);margin-top:0">📝 Modifica i Dati per Simulare</h2>'
+    html += '<p style="color:var(--muted);margin-bottom:1.5rem">I valori precompilati sono quelli estratti dal PDF. Modificali per vedere come cambierebbe la resilienza.</p>'
+    
+    html += '<input type="hidden" name="scenario_name" value="Scenario modificato">'
+    
+    # Griglia input
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;margin:1.5rem 0">'
+    
+    # Ricavi
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Ricavi (M€)</label>'
+    html += '<input type="number" name="revenue" value="' + str(revenue) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.8rem;color:var(--muted);margin:0.3rem 0 0 0">Originale: ' + str(orig_revenue) + ' M€</p>'
+    html += '</div>'
+    
+    # EBIT
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">EBIT (M€)</label>'
+    html += '<input type="number" name="ebit" value="' + str(ebit) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.8rem;color:var(--muted);margin:0.3rem 0 0 0">Originale: ' + str(orig_ebit) + ' M€</p>'
+    html += '</div>'
+    
+    # Debito
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Debito Totale (M€)</label>'
+    html += '<input type="number" name="total_debt" value="' + str(total_debt) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.8rem;color:var(--muted);margin:0.3rem 0 0 0">Originale: ' + str(orig_debt) + ' M€</p>'
+    html += '</div>'
+    
+    # Cassa
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Cassa (M€)</label>'
+    html += '<input type="number" name="cassa" value="' + str(cash) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.8rem;color:var(--muted);margin:0.3rem 0 0 0">Originale: ' + str(orig_cash) + ' M€</p>'
+    html += '</div>'
+    
+    # Interessi
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Interessi Passivi (M€)</label>'
+    html += '<input type="number" name="interest" value="' + str(interest) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.8rem;color:var(--muted);margin:0.3rem 0 0 0">Originale: ' + str(orig_interest) + ' M€</p>'
+    html += '</div>'
+    
+    html += '</div>'  # Fine griglia
+    
+    # Pulsante ricalcola
+    html += '<button type="submit" class="btn2" style="width:100%;padding:1rem;font-size:1.1rem;background:var(--teal)">🔄 Ricalcola Stress Test con questi valori</button>'
+    html += '</form>'
+    
+    # RISULTATI
+    html += '<div class="card" style="border:3px solid ' + status_color + ';padding:2rem;margin-bottom:2rem;background:linear-gradient(135deg, rgba(' + str(int(status_color[1:3], 16)) + ',' + str(int(status_color[3:5], 16)) + ',' + str(int(status_color[5:7], 16)) + ',0.1), transparent)">'
+    
+    html += '<div style="text-align:center;margin-bottom:2rem">'
+    html += '<h2 style="color:' + status_color + ';margin:0 0 1rem 0;font-size:2rem">' + status + '</h2>'
+    
+    if breaking_point > 0 and breaking_point < 100:
+        html += '<div style="font-size:5rem;font-weight:800;color:' + status_color + ';margin:1rem 0">-' + str(int(breaking_point)) + '%</div>'
+        html += '<p style="font-size:1.2rem;color:var(--muted);margin:0">Crollo ricavi sopportabile</p>'
+    else:
+        html += '<div style="font-size:2.5rem;font-weight:700;color:' + status_color + ';margin:1rem 0">Nessun limite critico</div>'
+    
+    html += '</div>'
+    
+    # Barra visiva
+    if breaking_point > 0 and breaking_point <= 100:
+        html += '<div style="margin:2rem 0">'
+        html += '<div style="background:var(--bg);border-radius:12px;overflow:hidden;height:40px">'
+        bar_width = min(breaking_point, 100)
+        html += '<div style="width:' + str(bar_width) + '%;height:100%;background:' + status_color + ';display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:1.1rem">' + str(int(breaking_point)) + '%</div>'
+        html += '</div>'
+        html += '<div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:0.85rem;color:var(--muted)">'
+        html += '<span>Crollo 0%</span><span>Crollo 50%</span><span>Crollo 100%</span>'
+        html += '</div></div>'
+    
+    # Spiegazione
+    if interest > 0 and ebit > 0:
+        explanation = "Con EBIT di " + str(ebit) + "M e interessi di " + str(interest) + "M, l'azienda può resistere a un crollo dei ricavi del " + str(int(breaking_point)) + "% prima di non riuscire più a pagare gli interessi."
+    elif interest == 0:
+        explanation = "L'azienda non ha debiti finanziari. È immune al rischio di default da tassi di interesse."
+    else:
+        explanation = "Dati insufficienti per calcolare il punto di rottura."
+    
+    html += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;margin:1.5rem 0">'
+    html += '<p style="font-size:1.1rem;line-height:1.8;margin:0">' + explanation + '</p>'
+    html += '</div>'
+    
+    # Benchmark
+    html += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;margin:1.5rem 0">'
+    html += '<h3 style="color:var(--gold);margin:0 0 0.5rem 0">📊 Benchmark di Settore (' + sector + ')</h3>'
+    html += '<p style="margin:0 0 0.5rem 0">Media del settore: <strong style="color:var(--teal)">' + str(benchmark) + '%</strong></p>'
+    html += '<p style="color:' + bench_color + ';margin:0;font-weight:600">' + bench_text + '</p>'
+    html += '</div>'
+    
+    # Cash Runway
+    html += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;margin:1.5rem 0">'
+    html += '<h3 style="color:var(--gold);margin:0 0 0.5rem 0">⏱️ Cash Runway (Autonomia)</h3>'
+    html += '<div style="font-size:3rem;font-weight:800;color:' + runway_color + ';margin:1rem 0">' + str(runway_display) + ' <span style="font-size:1.5rem">mesi</span></div>'
+    html += '<p style="color:' + runway_color + ';margin:0">' + runway_text + '</p>'
+    html += '</div>'
+    
+    # Interest Coverage
+    if interest > 0:
+        cov_color = "#10b981" if interest_coverage >= 3 else ("#fbbf24" if interest_coverage >= 1.5 else "#ef4444")
+        html += '<div style="text-align:center;padding:1rem;background:rgba(0,0,0,0.2);border-radius:8px;margin:1rem 0">'
+        html += '<h3 style="color:var(--muted);margin:0 0 0.5rem 0;font-size:0.95rem">Interest Coverage Ratio</h3>'
+        html += '<p style="font-size:2.5rem;font-weight:800;color:' + cov_color + ';margin:0">' + str(round(interest_coverage, 1)) + 'x</p>'
+        html += '<p style="color:var(--muted);margin:0.5rem 0 0 0;font-size:0.9rem">EBIT / Interessi Passivi</p>'
+        html += '</div>'
+    
+    html += '</div>'  # Fine card risultati
+    
+    # Pulsanti azione
+    html += '<div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap">'
+    html += '<button onclick="window.print()" class="btn2" style="background:var(--blue)">📥 Scarica Report PDF</button>'
+    html += '<a href="/cronologia" class="btn2" style="background:var(--gold);color:#0b1220">📚 Vedi Cronologia</a>'
+    html += '</div>'
+    
+    html += '<p style="text-align:center;color:var(--muted);margin-top:2rem">Analisi basata su: <strong>' + str(rep.company or rep.filename) + '</strong></p>'
+    
+    return render_template_string(BASE_TEMPLATE, title="Stress Test Avanzato", content=html)
+
+def simula():
     """Stress Test di Sopravvivenza - Calcola il punto di rottura aziendale"""
     
     rep = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).first()
