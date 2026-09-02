@@ -277,6 +277,7 @@ td,th{border:1px solid var(--line);padding:8px;text-align:left}
   var text = document.getElementById('progress-text');
   var progress = 0;
   var interval;
+  var timeout;
   
   if (form && btn) {
     form.addEventListener('submit', function(e) {
@@ -286,21 +287,37 @@ td,th{border:1px solid var(--line);padding:8px;text-align:left}
         btn.textContent = "Analisi in corso...";
         container.style.display = 'block';
         
-        // La barra va lentamente fino al 90% e si ferma lì
-        // Aspetta che il server risponda (la pagina si ricarica)
+        // Fase 1: va fino al 90% in 45 secondi
         interval = setInterval(function() {
-          progress += 1;
+          progress += 2;
           if (progress > 90) progress = 90;
           bar.style.width = progress + '%';
           bar.textContent = progress + '%';
           
-          if (progress < 15) text.textContent = "📄 Estrazione testo dal PDF...";
-          else if (progress < 35) text.textContent = "📊 Analisi metriche finanziarie...";
-          else if (progress < 55) text.textContent = "🧮 Calcolo indicatori e score...";
-          else if (progress < 75) text.textContent = "🔍 Verifica coerenza dati...";
-          else if (progress < 90) text.textContent = " Generazione report...";
+          if (progress < 20) text.textContent = "📄 Estrazione testo dal PDF...";
+          else if (progress < 40) text.textContent = "📊 Analisi metriche finanziarie...";
+          else if (progress < 60) text.textContent = "🧮 Calcolo indicatori e score...";
+          else if (progress < 80) text.textContent = " Verifica coerenza dati...";
           else text.textContent = "⏳ Analisi quasi completata, attendi i risultati...";
-        }, 500); // 1% ogni 500ms = 45 secondi per arrivare al 90%
+        }, 1000); // 2% ogni secondo = 45 secondi per arrivare al 90%
+        
+        // Fase 2: dopo 50 secondi, arriva al 100% e mostra messaggio
+        timeout = setTimeout(function() {
+          clearInterval(interval);
+          progress = 100;
+          bar.style.width = '100%';
+          bar.textContent = '100%';
+          bar.style.background = '#10b981';
+          text.innerHTML = '✅ Analisi completata! Se non vedi i risultati, <a href="/simula" style="color:var(--teal);text-decoration:underline">clicca qui per ricaricare</a>.';
+          
+          // Aggiungi pulsante di ricarica dopo 120 secondi totali
+          setTimeout(function() {
+            var reloadBtn = document.createElement('div');
+            reloadBtn.style.cssText = 'margin-top:1rem;text-align:center';
+            reloadBtn.innerHTML = '<a href="/simula" class="btn2" style="background:var(--teal)">🔄 Vai ai Risultati</a>';
+            text.parentNode.appendChild(reloadBtn);
+          }, 70000); // Dopo 70 secondi aggiuntivi (120 totali)
+        }, 50000); // 50 secondi
       }
     });
   }
