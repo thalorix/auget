@@ -1341,6 +1341,144 @@ def _stress_company(m, scenario):
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
+    """Stress Test di Sopravvivenza - Calcola il punto di rottura aziendale"""
+    
+    rep = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).first()
+    
+    if not rep:
+        return render_template_string(BASE_TEMPLATE, title="Simula", 
+            content="<div class='card'><h2>📊 Stress Test di Sopravvivenza</h2>"
+            "<p>Carica prima un bilancio in /analyze per vedere quanto è resiliente l'azienda.</p>"
+            "<a href='/analyze' class='btn2'>Analizza Bilancio</a></div>")
+    
+    m = _json.loads(rep.metrics_json or "{}")
+    
+    revenue = float(m.get("revenue") or 0)
+    ebit = float(m.get("ebit") or 0)
+    total_debt = float(m.get("total_debt") or 0)
+    cash = float(m.get("cassa") or 0)
+    interest = float(m.get("interest") or 0)
+    
+    breaking_point_ebit = 0
+    status = ""
+    status_color = ""
+    explanation = ""
+    advice = ""
+    
+    if interest > 0 and ebit > 0:
+        interest_coverage = ebit / interest
+        min_ebit_to_survive = interest
+        
+        if ebit > min_ebit_to_survive:
+            max_ebit_drop = ebit - min_ebit_to_survive
+            breaking_point_ebit = (max_ebit_drop / ebit) * 100
+        else:
+            breaking_point_ebit = 0
+        
+        if breaking_point_ebit >= 40:
+            status = "FORTEZZA FINANZIARIA"
+            status_color = "#10b981"
+            explanation = f"L'azienda può resistere a un crollo dei ricavi del {breaking_point_ebit:.0f}% prima di non riuscire più a pagare gli interessi con l'EBIT operativo."
+            advice = f"Con un Interest Coverage di {interest_coverage:.1f}x e cassa netta di €{cash - total_debt:.0f}M, è un'azienda difensiva eccellente per periodi di crisi."
+        elif breaking_point_ebit >= 20:
+            status = "RESILIENTE"
+            status_color = "#fbbf24"
+            explanation = f"L'azienda può sopportare una recessione moderata (-{breaking_point_ebit:.0f}% ricavi) prima di entrare in zona di pericolo."
+            advice = f"Interest Coverage di {interest_coverage:.1f}x. Monitorare il debito e la generazione di cassa nei prossimi trimestri."
+        elif breaking_point_ebit >= 5:
+            status = "FRAGILE"
+            status_color = "#f97316"
+            explanation = f"Basta un piccolo calo dei ricavi (-{breaking_point_ebit:.0f}%) per mettere a rischio la copertura degli interessi."
+            advice = f"Interest Coverage basso ({interest_coverage:.1f}x). L'azienda è vulnerabile a shock economici anche moderati."
+        else:
+            status = "A RISCHIO DEFAULT"
+            status_color = "#ef4444"
+            explanation = f"L'EBIT attuale ({ebit:.1f}M) copre a malapena gli interessi ({interest:.1f}M). Un ulteriore calo dei ricavi porterebbe al default tecnico."
+            advice = "Situazione critica. L'azienda deve ridurre il debito o aumentare urgentemente la redditività operativa."
+    
+    elif interest == 0:
+        status = "DEBITO ZERO"
+        status_color = "#10b981"
+        breaking_point_ebit = 100
+        explanation = "L'azienda non ha debiti finanziari e quindi non paga interessi. È immune al rischio di default da tassi di interesse."
+        advice = f"Con €{cash:.0f}M di cassa e zero debiti, l'azienda è una fortezza finanziaria pronta a cogliere opportunità di crescita."
+    
+    else:
+        status = "DATI INSUFFICIENTI"
+        status_color = "#6b7280"
+        breaking_point_ebit = 0
+        explanation = "Impossibile calcolare il punto di rottura con i dati disponibili nel bilancio."
+        advice = "Verificare che il PDF contenga Stato Patrimoniale e Conto Economico completi."
+    
+    html = "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>"
+    html += "<h1 style='color:#fbbf24;margin:0;font-size:2.5rem'>️ Stress Test di Sopravvivenza</h1>"
+    html += "<p style='color:#e2e8f0;font-size:1.2rem;margin:1rem 0 0 0'>Quanto può crollare l'azienda prima di andare in crisi?</p>"
+    html += "</div>"
+    
+    html += f"<div class='card' style='border:3px solid {status_color};padding:2.5rem;margin-bottom:2rem;background:linear-gradient(135deg, rgba({int(status_color[1:3], 16)}, {int(status_color[3:5], 16)}, {int(status_color[5:7], 16)}, 0.1), transparent)'>"
+    
+    html += "<div style='text-align:center;margin-bottom:2rem'>"
+    html += f"<h2 style='color:{status_color};margin:0 0 1rem 0;font-size:2rem'>{status}</h2>"
+    
+    if breaking_point_ebit > 0 and breaking_point_ebit < 100:
+        html += f"<div style='font-size:4rem;font-weight:800;color:{status_color};margin:1rem 0'>-{breaking_point_ebit:.0f}%</div>"
+        html += "<p style='font-size:1.2rem;color:var(--muted);margin:0'>Crollo ricavi sopportabile</p>"
+    else:
+        html += f"<div style='font-size:2.5rem;font-weight:700;color:{status_color};margin:1rem 0'>Nessun limite critico</div>"
+    
+    html += "</div>"
+    
+    if breaking_point_ebit > 0 and breaking_point_ebit <= 100:
+        html += "<div style='margin:2rem 0'>"
+        html += "<div style='background:var(--bg);border-radius:12px;overflow:hidden;height:40px;position:relative'>"
+        bar_color = status_color
+        bar_width = min(breaking_point_ebit, 100)
+        html += f"<div style='width:{bar_width}%;height:100%;background:{bar_color};transition:width 1s ease;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:1.1rem'>{breaking_point_ebit:.0f}%</div>"
+        html += "</div>"
+        html += "<div style='display:flex;justify-content:space-between;margin-top:0.5rem;font-size:0.85rem;color:var(--muted)'>"
+        html += "<span>Crollo 0%</span>"
+        html += "<span>Crollo 50%</span>"
+        html += "<span>Crollo 100%</span>"
+        html += "</div>"
+        html += "</div>"
+    
+    html += f"<div style='background:var(--bg);padding:1.5rem;border-radius:8px;margin:1.5rem 0'>"
+    html += f"<p style='font-size:1.1rem;line-height:1.8;margin:0;color:var(--text)'>{explanation}</p>"
+    html += "</div>"
+    
+    html += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:1rem;margin:1.5rem 0'>"
+    html += f"<div style='background:var(--bg);padding:1rem;border-radius:8px;text-align:center'><h3 style='color:var(--muted);margin:0 0 0.5rem 0;font-size:0.9rem'>Ricavi</h3><p style='font-size:1.5rem;font-weight:700;margin:0'>€{revenue:.0f}M</p></div>"
+    html += f"<div style='background:var(--bg);padding:1rem;border-radius:8px;text-align:center'><h3 style='color:var(--muted);margin:0 0 0.5rem 0;font-size:0.9rem'>EBIT</h3><p style='font-size:1.5rem;font-weight:700;margin:0'>€{ebit:.0f}M</p></div>"
+    html += f"<div style='background:var(--bg);padding:1rem;border-radius:8px;text-align:center'><h3 style='color:var(--muted);margin:0 0 0.5rem 0;font-size:0.9rem'>Interessi</h3><p style='font-size:1.5rem;font-weight:700;margin:0'>€{interest:.0f}M</p></div>"
+    html += f"<div style='background:var(--bg);padding:1rem;border-radius:8px;text-align:center'><h3 style='color:var(--muted);margin:0 0 0.5rem 0;font-size:0.9rem'>Debito Netto</h3><p style='font-size:1.5rem;font-weight:700;margin:0'>€{total_debt - cash:.0f}M</p></div>"
+    html += "</div>"
+    
+    if interest > 0:
+        coverage = ebit / interest if interest > 0 else 0
+        coverage_color = "#10b981" if coverage >= 3 else ("#fbbf24" if coverage >= 1.5 else "#ef4444")
+        html += f"<div style='text-align:center;padding:1rem;background:rgba(0,0,0,0.2);border-radius:8px;margin:1rem 0'>"
+        html += f"<h3 style='color:var(--muted);margin:0 0 0.5rem 0;font-size:0.95rem'>Interest Coverage Ratio</h3>"
+        html += f"<p style='font-size:2.5rem;font-weight:800;color:{coverage_color};margin:0'>{coverage:.1f}x</p>"
+        html += f"<p style='color:var(--muted);margin:0.5rem 0 0 0;font-size:0.9rem'>EBIT / Interessi Passivi</p>"
+        html += "</div>"
+    
+    html += f"<div style='background:linear-gradient(135deg, rgba({int(status_color[1:3], 16)}, {int(status_color[3:5], 16)}, {int(status_color[5:7], 16)}, 0.1), transparent);border:2px solid {status_color};padding:1.5rem;border-radius:8px;margin:1.5rem 0'>"
+    html += f"<h3 style='color:{status_color};margin:0 0 0.5rem 0'>💡 Analisi Strategica</h3>"
+    html += f"<p style='margin:0;line-height:1.8'>{advice}</p>"
+    html += "</div>"
+    
+    html += "</div>"
+    
+    html += "<div style='display:flex;gap:1rem;justify-content:center;flex-wrap:wrap'>"
+    html += "<a href='/analyze' class='btn2' style='background:var(--teal)'>📄 Analizza Altro Bilancio</a>"
+    html += "<a href='/cronologia' class='btn2' style='background:var(--gold);color:#0b1220'>📚 Vedi Cronologia</a>"
+    html += "</div>"
+    
+    html += f"<p style='text-align:center;color:var(--muted);margin-top:2rem'>Analisi basata su: <strong>{rep.company or rep.filename}</strong></p>"
+    
+    return render_template_string(BASE_TEMPLATE, title="Stress Test", content=html)
+
+def simula():
     rs = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
     
     if request.method == "POST":
