@@ -1358,6 +1358,283 @@ def _stress_company(m, scenario):
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
+    """Stress Test Pro con scenari preimpostati modificabili dall'utente"""
+    
+    rep = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).first()
+    
+    if not rep:
+        return render_template_string(BASE_TEMPLATE, title="Simula", 
+            content="<div class='card'><h2>🛡️ Stress Test Finanziario Pro</h2>"
+            "<p>Carica prima un bilancio in /analyze per accedere al simulatore.</p>"
+            "<a href='/analyze' class='btn2'>Analizza Bilancio</a></div>")
+    
+    m = _json.loads(rep.metrics_json or "{}")
+    
+    # Dati originali dal PDF
+    orig_revenue = float(m.get("revenue") or 0)
+    orig_ebit = float(m.get("ebit") or 0)
+    orig_debt = float(m.get("total_debt") or 0)
+    orig_cash = float(m.get("cassa") or 0)
+    orig_interest = float(m.get("interest") or 0)
+    
+    # Calcolo tasso interesse medio originale
+    orig_interest_rate = (orig_interest / orig_debt * 100) if orig_debt > 0 else 5.0
+    
+    # Scenari preimpostati (valori percentuali rispetto all'originale)
+    scenarios = {
+        "recession": {
+            "name": "📉 Recessione Moderata",
+            "color": "#f97316",
+            "revenue": orig_revenue * 0.85,
+            "ebit": orig_ebit * 0.70,
+            "debt": orig_debt,
+            "rate": orig_interest_rate + 1.0,
+            "cash": orig_cash,
+            "desc": "Ricavi -15%, EBIT -30% (leva operativa), Tassi +1%"
+        },
+        "crisis": {
+            "name": "🌪️ Crisi Grave (Black Swan)",
+            "color": "#ef4444",
+            "revenue": orig_revenue * 0.60,
+            "ebit": orig_ebit * 0.25,
+            "debt": orig_debt * 1.15,
+            "rate": orig_interest_rate + 2.5,
+            "cash": orig_cash * 0.70,
+            "desc": "Ricavi -40%, EBIT -75%, Debito +15%, Tassi +2.5%, Cassa -30%"
+        },
+        "growth": {
+            "name": "🚀 Crescita Aggressiva",
+            "color": "#10b981",
+            "revenue": orig_revenue * 1.25,
+            "ebit": orig_ebit * 1.45,
+            "debt": orig_debt * 1.30,
+            "rate": orig_interest_rate,
+            "cash": orig_cash * 0.80,
+            "desc": "Ricavi +25%, EBIT +45%, Debito +30% (investimenti), Cassa -20%"
+        },
+        "custom": {
+            "name": "✏️ Personalizzato",
+            "color": "var(--gold)",
+            "revenue": orig_revenue,
+            "ebit": orig_ebit,
+            "debt": orig_debt,
+            "rate": orig_interest_rate,
+            "cash": orig_cash,
+            "desc": "Parti dai dati originali e modifica a piacere"
+        }
+    }
+    
+    # Se POST, usa i valori inviati dall'utente
+    if request.method == "POST":
+        sim_revenue = float(request.form.get("revenue", orig_revenue))
+        sim_ebit = float(request.form.get("ebit", orig_ebit))
+        sim_debt = float(request.form.get("total_debt", orig_debt))
+        sim_rate = float(request.form.get("interest_rate", orig_interest_rate))
+        sim_cash = float(request.form.get("cassa", orig_cash))
+        scenario_name = request.form.get("scenario_name", "Scenario Personalizzato")
+    else:
+        # GET: mostra valori originali
+        sim_revenue = orig_revenue
+        sim_ebit = orig_ebit
+        sim_debt = orig_debt
+        sim_rate = orig_interest_rate
+        sim_cash = orig_cash
+        scenario_name = "Dati Originali dal PDF"
+    
+    # Ricalcolo interessi basato su debito e tasso
+    sim_interest = sim_debt * (sim_rate / 100)
+    
+    # --- MOTORE DI CALCOLO ---
+    if sim_interest > 0 and sim_ebit > 0:
+        breaking_point = max(0, ((sim_ebit - sim_interest) / sim_ebit) * 100)
+        interest_coverage = sim_ebit / sim_interest
+    else:
+        breaking_point = 100.0 if sim_interest == 0 else 0.0
+        interest_coverage = 999.0 if sim_interest == 0 else 0.0
+    
+    # Cash Runway
+    monthly_burn = max((sim_revenue - sim_ebit) / 12, sim_revenue / 24)
+    cash_runway = sim_cash / monthly_burn if monthly_burn > 0 else 999
+    
+    # Stato
+    if breaking_point >= 40 and interest_coverage >= 3.0:
+        status, status_color = "FORTEZZA FINANZIARIA", "#10b981"
+    elif breaking_point >= 20 and interest_coverage >= 1.5:
+        status, status_color = "RESILIENTE", "#fbbf24"
+    elif breaking_point >= 5:
+        status, status_color = "FRAGILE", "#f97316"
+    else:
+        status, status_color = "A RISCHIO DEFAULT", "#ef4444"
+    
+    # Benchmark
+    sector_benchmarks = {"Tech": 45, "Software": 50, "Services": 35, "Manufacturing": 25, "Industrial": 25, "Retail": 15, "Consumer": 20, "Finance": 30, "Banking": 35, "Insurance": 40, "Healthcare": 35, "Energy": 20, "Utilities": 30, "Altro": 30}
+    sector = rep.sector or "Altro"
+    benchmark = sector_benchmarks.get(sector, 30)
+    bp_diff = breaking_point - benchmark
+    
+    # --- HTML ---
+    html = "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>"
+    html += "<h1 style='color:#fbbf24;margin:0;font-size:2.5rem'>🛡️ Stress Test Finanziario Pro</h1>"
+    html += "<p style='color:#e2e8f0;font-size:1.2rem;margin:1rem 0 0 0'>Scegli uno scenario o modifica i valori manualmente</p>"
+    html += "</div>"
+    
+    # FORM PRINCIPALE
+    html += '<form method="post" class="card" style="margin-bottom:2rem;padding:2rem">'
+    html += '<input type="hidden" name="scenario_name" value="Scenario Personalizzato">'
+    
+    # PULSANTI SCENARIO (usano JavaScript per popolare i campi)
+    html += '<h3 style="color:var(--gold);margin-top:0"> Scenari Preimpostati (clicca per pre-compilare, poi modifica a piacere)</h3>'
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:1rem;margin-bottom:2rem">'
+    
+    for key, sc in scenarios.items():
+        html += '<button type="button" class="btn2" style="background:' + sc["color"] + ';padding:1rem;text-align:left" onclick="applyScenario(\'' + key + '\')">'
+        html += '<div style="font-weight:700;font-size:1.1rem;margin-bottom:0.3rem">' + sc["name"] + '</div>'
+        html += '<div style="font-size:0.85rem;opacity:0.9">' + sc["desc"] + '</div>'
+        html += '</button>'
+    
+    html += '</div>'
+    
+    # CAMPI INPUT MODIFICABILI
+    html += '<h3 style="color:var(--gold);margin:1.5rem 0 1rem 0">📝 Modifica i Valori (pre-compilati dallo scenario o dal PDF)</h3>'
+    html += '<p style="color:var(--muted);margin-bottom:1.5rem">I valori mostrati sono quelli attuali. Modificali liberamente e clicca "Ricalcola" per vedere i nuovi risultati.</p>'
+    
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:1rem;margin-bottom:1.5rem">'
+    
+    # Ricavi
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px;border:1px solid var(--line)">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Ricavi (M€)</label>'
+    html += '<input type="number" id="revenue" name="revenue" value="' + str(sim_revenue) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.75rem;color:var(--muted);margin:0.3rem 0 0 0">Originale PDF: ' + str(orig_revenue) + ' M€</p>'
+    html += '</div>'
+    
+    # EBIT
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px;border:1px solid var(--line)">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">EBIT (M€)</label>'
+    html += '<input type="number" id="ebit" name="ebit" value="' + str(sim_ebit) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.75rem;color:var(--muted);margin:0.3rem 0 0 0">Originale PDF: ' + str(orig_ebit) + ' M€</p>'
+    html += '</div>'
+    
+    # Debito
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px;border:1px solid var(--line)">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Debito Finanziario (M€)</label>'
+    html += '<input type="number" id="total_debt" name="total_debt" value="' + str(sim_debt) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.75rem;color:var(--muted);margin:0.3rem 0 0 0">Originale PDF: ' + str(orig_debt) + ' M€</p>'
+    html += '</div>'
+    
+    # Tasso Interesse
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px;border:1px solid var(--line)">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Tasso Interesse Medio (%)</label>'
+    html += '<input type="number" id="interest_rate" name="interest_rate" value="' + str(sim_rate) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.75rem;color:var(--muted);margin:0.3rem 0 0 0">Originale: ' + str(orig_interest_rate) + '% → Interessi stimati: ' + str(round(sim_interest, 2)) + ' M€</p>'
+    html += '</div>'
+    
+    # Cassa
+    html += '<div style="background:var(--bg);padding:1rem;border-radius:8px;border:1px solid var(--line)">'
+    html += '<label style="display:block;margin-bottom:0.5rem;color:var(--muted);font-size:0.9rem">Cassa Disponibile (M€)</label>'
+    html += '<input type="number" id="cassa" name="cassa" value="' + str(sim_cash) + '" step="0.1" style="width:100%;padding:0.8rem;border-radius:6px;border:2px solid var(--line);background:var(--surface);color:var(--text);font-size:1.1rem;font-weight:600">'
+    html += '<p style="font-size:0.75rem;color:var(--muted);margin:0.3rem 0 0 0">Originale PDF: ' + str(orig_cash) + ' M€</p>'
+    html += '</div>'
+    
+    html += '</div>'
+    
+    # Pulsante Ricalcola
+    html += '<button type="submit" class="btn2" style="width:100%;padding:1rem;font-size:1.1rem;background:var(--teal);margin-top:1rem">🔄 Ricalcola Stress Test con questi valori</button>'
+    html += '</form>'
+    
+    # JAVASCRIPT PER SCENARI
+    html += '''<script>
+    const scenarios = {
+        recession: {revenue: ''' + str(orig_revenue * 0.85) + ''', ebit: ''' + str(orig_ebit * 0.70) + ''', debt: ''' + str(orig_debt) + ''', rate: ''' + str(orig_interest_rate + 1.0) + ''', cash: ''' + str(orig_cash) + '''},
+        crisis: {revenue: ''' + str(orig_revenue * 0.60) + ''', ebit: ''' + str(orig_ebit * 0.25) + ''', debt: ''' + str(orig_debt * 1.15) + ''', rate: ''' + str(orig_interest_rate + 2.5) + ''', cash: ''' + str(orig_cash * 0.70) + '''},
+        growth: {revenue: ''' + str(orig_revenue * 1.25) + ''', ebit: ''' + str(orig_ebit * 1.45) + ''', debt: ''' + str(orig_debt * 1.30) + ''', rate: ''' + str(orig_interest_rate) + ''', cash: ''' + str(orig_cash * 0.80) + '''},
+        custom: {revenue: ''' + str(orig_revenue) + ''', ebit: ''' + str(orig_ebit) + ''', debt: ''' + str(orig_debt) + ''', rate: ''' + str(orig_interest_rate) + ''', cash: ''' + str(orig_cash) + '''}
+    };
+    
+    function applyScenario(key) {
+        const s = scenarios[key];
+        document.getElementById('revenue').value = s.revenue.toFixed(1);
+        document.getElementById('ebit').value = s.ebit.toFixed(1);
+        document.getElementById('total_debt').value = s.debt.toFixed(1);
+        document.getElementById('interest_rate').value = s.rate.toFixed(2);
+        document.getElementById('cassa').value = s.cash.toFixed(1);
+        
+        // Evidenzia i campi modificati
+        ['revenue', 'ebit', 'total_debt', 'interest_rate', 'cassa'].forEach(id => {
+            const el = document.getElementById(id);
+            el.style.borderColor = '#fbbf24';
+            setTimeout(() => { el.style.borderColor = 'var(--line)'; }, 1000);
+        });
+        
+        // Scroll ai campi
+        document.getElementById('revenue').scrollIntoView({behavior: 'smooth', block: 'center'});
+    }
+    </script>'''
+    
+    # --- RISULTATI ---
+    html += '<div class="card" style="border:3px solid ' + status_color + ';padding:2rem;margin-bottom:2rem;background:linear-gradient(135deg, rgba(' + str(int(status_color[1:3], 16)) + ',' + str(int(status_color[3:5], 16)) + ',' + str(int(status_color[5:7], 16)) + ',0.1), transparent)">'
+    html += '<h2 style="color:var(--gold);margin-top:0;text-align:center">Risultati: ' + scenario_name + '</h2>'
+    
+    html += '<div style="text-align:center;margin:2rem 0">'
+    html += '<h3 style="color:' + status_color + ';margin:0 0 1rem 0;font-size:2.2rem;font-weight:800">' + status + '</h3>'
+    if breaking_point > 0 and breaking_point < 100:
+        html += '<div style="font-size:6rem;font-weight:900;color:' + status_color + ';margin:1rem 0;line-height:1">-' + str(int(breaking_point)) + '%</div>'
+        html += '<p style="font-size:1.3rem;color:var(--muted);margin:0">Crollo ricavi sopportabile prima del default tecnico</p>'
+    else:
+        html += '<div style="font-size:3rem;font-weight:700;color:' + status_color + ';margin:1rem 0">Nessun limite critico</div>'
+    html += '</div>'
+    
+    # Barra
+    if breaking_point > 0 and breaking_point <= 100:
+        html += '<div style="margin:2rem 0">'
+        html += '<div style="background:var(--bg);border-radius:12px;overflow:hidden;height:40px">'
+        bar_width = min(breaking_point, 100)
+        html += '<div style="width:' + str(bar_width) + '%;height:100%;background:' + status_color + ';display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:1.1rem">' + str(int(breaking_point)) + '%</div>'
+        html += '</div>'
+        html += '<div style="display:flex;justify-content:space-between;margin-top:0.5rem;font-size:0.85rem;color:var(--muted)"><span>Crollo 0%</span><span>Crollo 50%</span><span>Crollo 100%</span></div></div>'
+    
+    # Griglia metriche
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:1.5rem;margin-top:2rem">'
+    
+    cov_color = "#10b981" if interest_coverage >= 3.0 else ("#fbbf24" if interest_coverage >= 1.5 else "#ef4444")
+    html += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;text-align:center">'
+    html += '<h4 style="color:var(--muted);margin:0 0 0.5rem 0">Interest Coverage Ratio</h4>'
+    html += '<p style="font-size:2.5rem;font-weight:800;color:' + cov_color + ';margin:0">' + str(round(interest_coverage, 1)) + 'x</p>'
+    html += '<p style="font-size:0.85rem;color:var(--muted);margin:0.5rem 0 0 0">EBIT / Interessi (Target > 3.0x)</p></div>'
+    
+    runway_display = min(int(cash_runway), 99) if cash_runway < 999 else "99+"
+    runway_color = "#10b981" if cash_runway >= 12 else ("#fbbf24" if cash_runway >= 6 else "#ef4444")
+    html += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;text-align:center">'
+    html += '<h4 style="color:var(--muted);margin:0 0 0.5rem 0">Cash Runway (Autonomia)</h4>'
+    html += '<p style="font-size:2.5rem;font-weight:800;color:' + runway_color + ';margin:0">' + str(runway_display) + ' <span style="font-size:1.2rem">mesi</span></p>'
+    html += '<p style="font-size:0.85rem;color:var(--muted);margin:0.5rem 0 0 0">Sopravvivenza con cassa attuale</p></div>'
+    
+    bench_text = "SUPERIORE alla media" if bp_diff > 5 else ("INFERIORE alla media" if bp_diff < -5 else "IN LINEA con la media")
+    bench_color = "#10b981" if bp_diff > 5 else ("#ef4444" if bp_diff < -5 else "#fbbf24")
+    html += '<div style="background:var(--bg);padding:1.5rem;border-radius:8px;text-align:center">'
+    html += '<h4 style="color:var(--muted);margin:0 0 0.5rem 0">Benchmark Settore (' + sector + ')</h4>'
+    html += '<p style="font-size:1.5rem;font-weight:700;color:var(--teal);margin:0">Media: ' + str(benchmark) + '%</p>'
+    html += '<p style="font-size:1rem;font-weight:700;color:' + bench_color + ';margin:0.5rem 0 0 0">' + bench_text + ' (' + str(int(bp_diff)) + '%)</p></div>'
+    
+    html += '</div>'
+    
+    # Spiegazione
+    explanation = "Nello scenario '" + scenario_name + "', con EBIT di " + str(round(sim_ebit, 1)) + "M€ e interessi stimati di " + str(round(sim_interest, 1)) + "M€, l'azienda può assorbire un ulteriore crollo dei ricavi del " + str(int(breaking_point)) + "% prima che l'Interest Coverage scenda sotto 1.0x."
+    html += '<div style="background:rgba(0,0,0,0.2);padding:1.5rem;border-radius:8px;margin:2rem 0;border-left:4px solid ' + status_color + '">'
+    html += '<p style="font-size:1.1rem;line-height:1.8;margin:0;color:var(--text)">' + explanation + '</p></div>'
+    
+    html += '</div>'
+    
+    # Azioni
+    html += '<div style="display:flex;gap:1rem;justify-content:center;flex-wrap:wrap">'
+    html += '<button onclick="window.print()" class="btn2" style="background:var(--blue)">📥 Esporta Report PDF</button>'
+    html += '<a href="/cronologia" class="btn2" style="background:var(--gold);color:#0b1220">📚 Torna alla Cronologia</a>'
+    html += '</div>'
+    
+    html += '<p style="text-align:center;color:var(--muted);margin-top:2rem">Dati base estratti da: <strong>' + str(rep.company or rep.filename) + '</strong></p>'
+    
+    return render_template_string(BASE_TEMPLATE, title="Stress Test Pro", content=html)
+
+def simula():
     """Stress Test con modifica manuale dei dati per simulare scenari"""
     
     rep = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).first()
