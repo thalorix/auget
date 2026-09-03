@@ -168,6 +168,21 @@ class Report(db.Model):
     is_favorite = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Scenario(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    report_id = db.Column(db.Integer, db.ForeignKey('report.id'), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
+    revenue = db.Column(db.Float, nullable=False)
+    ebit = db.Column(db.Float, nullable=False)
+    total_debt = db.Column(db.Float, nullable=False)
+    interest_rate = db.Column(db.Float, nullable=False)
+    cash = db.Column(db.Float, nullable=False)
+    scenario_type = db.Column(db.String(50))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    report = db.relationship('Report', backref=db.backref('scenarios', lazy=True))
+
+
 class WatchItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"))
