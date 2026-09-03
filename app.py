@@ -2411,3 +2411,198 @@ with app.app_context():
 if __name__ == "__main__":
     print("AUGET WEB con login: http://127.0.0.1:5001")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5001)), debug=False, threaded=True)
+
+
+# ============================================================================
+# NUOVE FUNZIONALITÀ: CONFRONTO AZIENDE E REPORT PDF PROFESSIONALE
+# ============================================================================
+
+@app.route("/compare", methods=["GET", "POST"])
+@login_required
+def compare_reports():
+    """Confronto side-by-side di fino a 3 aziende dalla cronologia"""
+    reports = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
+    
+    selected_reports = []
+    if request.method == "POST":
+        ids = request.form.getlist("report_ids")
+        if len(ids) > 3:
+            flash("Puoi confrontare al massimo 3 aziende alla volta", "error")
+            return redirect("/compare")
+        selected_reports = Report.query.filter(Report.id.in_(ids), Report.user_id == current_user.id).all()
+    
+    # Costruzione HTML
+    html = "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:3rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>"
+    html += "<h1 style='color:#fbbf24;margin:0;font-size:2.5rem'>Confronto Aziende</h1>"
+    html += "<p style='color:#e2e8f0;font-size:1.2rem;margin:1rem 0 0 0'>Seleziona fino a 3 report per un'analisi comparativa</p>"
+    html += "</div>"
+    
+    html += '<div class="card" style="padding:2rem">'
+    html += '<form method="post">'
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:1rem;margin-bottom:1.5rem">'
+    
+    for rep in reports:
+        m = _json.loads(rep.metrics_json or "{}")
+        score = rep.score or "N/A"
+        html += f'<label style="display:flex;align-items:center;gap:0.8rem;padding:1rem;background:var(--bg);border-radius:8px;border:1px solid var(--line);cursor:pointer">'
+        html += f'<input type="checkbox" name="report_ids" value="{rep.id}" style="width:20px;height:20px">'
+        html += f'<div style="flex:1"><strong style="color:var(--gold)">{rep.company or rep.filename}</strong><br><span style="font-size:0.85rem;color:var(--muted)">Score: {score} | {rep.created_at.strftime("%d/%m/%Y") if rep.created_at else ""}</span></div>'
+        html += '</label>'
+        
+    html += '</div>'
+    html += '<button type="submit" class="btn2" style="width:100%;background:var(--teal)">Confronta Selezionati</button>'
+    html += '</form></div>'
+    
+    if selected_reports:
+        html += '<div class="card" style="margin-top:2rem;padding:2rem;overflow-x:auto">'
+        html += '<h3 style="color:var(--gold);margin-bottom:1.5rem">Risultati del Confronto</h3>'
+        html += '<table style="width:100%;border-collapse:collapse;text-align:center">'
+        
+        # Intestazione tabella
+        html += '<tr style="background:var(--bg)"><th style="padding:1rem;text-align:left;border-bottom:2px solid var(--line)">Metrica</th>'
+        for rep in selected_reports:
+            html += f'<th style="padding:1rem;border-bottom:2px solid var(--line);color:var(--gold)">{rep.company or rep.filename}</th>'
+        html += '</tr>'
+        
+        # Righe della tabella
+        metrics_to_compare = [
+            ("Score AUGET", lambda r: str(r.score or "N/A")),
+            ("Settore", lambda r: r.sector or "N/D"),
+            ("Ricavi (M€)", lambda r: str(round(_json.loads(r.metrics_json or "{}").get("revenue", 0), 1))),
+            ("EBIT (M€)", lambda r: str(round(_json.loads(r.metrics_json or "{}").get("ebit", 0), 1))),
+            ("Debito/EBITDA", lambda r: str(round(_json.loads(r.metrics_json or "{}").get("total_debt", 0) / max(_json.loads(r.metrics_json or "{}").get("ebitda", 1), 0.1), 1)) + "x"),
+            ("Interest Coverage", lambda r: str(round(_json.loads(r.metrics_json or "{}").get("ebit", 0) / max(_json.loads(r.metrics_json or "{}").get("interest", 1), 0.1), 1)) + "x"),
+        ]
+        
+        for label, fn in metrics_to_compare:
+            html += f'<tr><td style="padding:0.8rem;text-align:left;border-bottom:1px solid var(--line);font-weight:600">{label}</td>'
+            for rep in selected_reports:
+                html += f'<td style="padding:0.8rem;border-bottom:1px solid var(--line)">{fn(rep)}</td>'
+            html += '</tr>'
+            
+        html += '</table>'
+        html += '<div style="margin-top:1.5rem;text-align:center"><a href="/compare" class="btn2" style="background:var(--blue)">Nuovo Confronto</a></div>'
+        html += '</div>'
+        
+    return render_template_string(BASE_TEMPLATE, title="Confronto Aziende", content=html)
+
+
+@app.route("/report/<int:rid>/pdf")
+@login_required
+def report_pdf(rid):
+    """Genera un Report PDF Professionale e Brandizzato"""
+    from weasyprint import HTML
+    from flask import send_file
+    import io
+    
+    rep = Report.query.filter_by(id=rid, user_id=current_user.id).first_or_404()
+    m = _json.loads(rep.metrics_json or "{}")
+    
+    # Dati per il PDF
+    revenue = m.get("revenue", 0)
+    ebit = m.get("ebit", 0)
+    debt = m.get("total_debt", 0)
+    cash = m.get("cassa", 0)
+    score = rep.score or "N/A"
+    sector = rep.sector or "Non specificato"
+    date_str = rep.created_at.strftime("%d/%m/%Y") if rep.created_at else "N/D"
+    
+    # Calcolo rapido metrics per il PDF
+    interest = m.get("interest", 0)
+    ebitda = m.get("ebitda", max(ebit * 1.2, 0.1))
+    ic = round(ebit / max(interest, 0.1), 1)
+    de = round(debt / max(ebitda, 0.1), 1)
+    
+    # Determina colore stato
+    if score >= 70: status, color = "SOLIDA", "#10b981"
+    elif score >= 45: status, color = "ATTENZIONE", "#fbbf24"
+    else: status, color = "CRITICA", "#ef4444"
+
+    # Template HTML specifico per PDF (A4, pulito, professionale)
+    pdf_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            @page {{ size: A4; margin: 2cm; }}
+            body {{ font-family: 'Helvetica', 'Arial', sans-serif; color: #333; line-height: 1.6; }}
+            .header {{ border-bottom: 3px solid #1e3a8a; padding-bottom: 1rem; margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-end; }}
+            .logo {{ font-size: 2rem; font-weight: 900; color: #1e3a8a; letter-spacing: 2px; }}
+            .meta {{ text-align: right; font-size: 0.9rem; color: #666; }}
+            .company-name {{ font-size: 1.8rem; font-weight: 700; color: #0f172a; margin-bottom: 0.5rem; }}
+            .score-box {{ background: {color}; color: white; padding: 1.5rem; border-radius: 8px; text-align: center; margin: 2rem 0; }}
+            .score-val {{ font-size: 3.5rem; font-weight: 900; line-height: 1; }}
+            .score-label {{ font-size: 1.2rem; text-transform: uppercase; letter-spacing: 1px; }}
+            .metrics-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin: 2rem 0; }}
+            .metric-card {{ border: 1px solid #e2e8f0; padding: 1rem; border-radius: 6px; }}
+            .metric-label {{ font-size: 0.85rem; color: #64748b; text-transform: uppercase; }}
+            .metric-val {{ font-size: 1.5rem; font-weight: 700; color: #0f172a; margin-top: 0.3rem; }}
+            .footer {{ margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e2e8f0; font-size: 0.8rem; color: #94a3b8; text-align: center; }}
+            h2 {{ color: #1e3a8a; font-size: 1.2rem; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.5rem; margin-top: 2rem; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <div class="logo">AUGET</div>
+            <div class="meta">Report Generato il: {date_str}<br>Analisi Finanziaria Intelligente</div>
+        </div>
+        
+        <div class="company-name">{rep.company or rep.filename}</div>
+        <div>Settore: {sector}</div>
+        
+        <div class="score-box">
+            <div class="score-val">{score}/100</div>
+            <div class="score-label">Valutazione: {status}</div>
+        </div>
+        
+        <h2>Principali Indicatori Finanziari</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Ricavi Totali</div>
+                <div class="metric-val">€ {revenue:,.0f} M</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">EBIT</div>
+                <div class="metric-val">€ {ebit:,.0f} M</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Debito Finanziario</div>
+                <div class="metric-val">€ {debt:,.0f} M</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Cassa Disponibile</div>
+                <div class="metric-val">€ {cash:,.0f} M</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Interest Coverage</div>
+                <div class="metric-val">{ic}x</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Debt / EBITDA</div>
+                <div class="metric-val">{de}x</div>
+            </div>
+        </div>
+        
+        <h2>Note dell'Analista</h2>
+        <div style="border: 1px dashed #cbd5e1; padding: 1.5rem; min-height: 100px; background: #f8fafc; border-radius: 6px;">
+            <p style="color: #94a3b8; font-style: italic;">Spazio riservato alle note qualitative, raccomandazioni di investimento o osservazioni sul management.</p>
+        </div>
+        
+        <div class="footer">
+            Documento generato automaticamente da AUGET. I dati sono estratti dal bilancio caricato e le proiezioni sono a scopo indicativo.
+        </div>
+    </body>
+    </html>
+    """
+    
+    # Generazione PDF
+    pdf_file = HTML(string=pdf_html).write_pdf()
+    
+    filename = f"Report_AUGET_{(rep.company or 'Azienda').replace(' ', '_')}.pdf"
+    return send_file(
+        io.BytesIO(pdf_file),
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=filename
+    )
