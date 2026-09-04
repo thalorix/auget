@@ -2357,23 +2357,24 @@ def analysis(rid):
     html += "<div style='display:flex;gap:1rem;justify-content:center;flex-wrap:wrap'><a href='/simula' class='btn2' style='background:var(--teal)'>Test di Sopravvivenza</a><a href='/cronologia' class='btn2' style='background:var(--gold);color:#0b1220'>Cronologia</a></div></div>"
     return render_template_string(BASE_TEMPLATE, title="Analisi Completa", content=html)
 
+
+
 @app.route("/onboarding")
 @login_required
 def onboarding():
-    # Controlla se l'utente ha già completato l'onboarding
     if session.get("onboarding_completed"):
         return redirect("/dashboard")
     
     step = request.args.get("step", "1")
     
     if step == "1":
-        html = """
+        html = '''
         <div style="max-width:600px;margin:0 auto;padding:3rem;text-align:center">
             <h1 style="color:var(--gold);font-size:2.5rem">Benvenuto in AUGET</h1>
             <p style="color:var(--muted);font-size:1.2rem;margin:1rem 0 2rem 0">Analizziamo il tuo primo bilancio in 30 secondi</p>
-            <div style="background:var(--bg);padding:2rem;border-radius:12px;margin-bottom:2rem">
-                <h3 style="color:var(--text)">Cosa ti serve:</h3>
-                <ul style="color:var(--muted);text-align:left;list-style:none;padding:0">
+            <div style="background:var(--bg);padding:2rem;border-radius:12px;margin-bottom:2rem;text-align:left">
+                <h3 style="color:var(--text);margin-top:0">Cosa ti serve:</h3>
+                <ul style="color:var(--muted);list-style:none;padding:0">
                     <li style="margin:0.8rem 0">✅ Un bilancio in PDF (Stato Patrimoniale + Conto Economico)</li>
                     <li style="margin:0.8rem 0">✅ 30 secondi del tuo tempo</li>
                     <li style="margin:0.8rem 0">✅ Curiosità di scoprire la salute finanziaria</li>
@@ -2381,19 +2382,20 @@ def onboarding():
             </div>
             <a href="/onboarding?step=2" class="btn2" style="background:var(--teal);padding:1rem 2rem;font-size:1.1rem">Inizia →</a>
         </div>
-        """
+        '''
     elif step == "2":
-        html = """
+        html = '''
         <div style="max-width:600px;margin:0 auto;padding:3rem;text-align:center">
             <h2 style="color:var(--gold)">Carica il tuo primo bilancio</h2>
-            <p style="color:var(--muted);margin:1rem 0 2rem 0">Trascina qui il PDF o clicca per selezionarlo</p>
+            <p style="color:var(--muted);margin:1rem 0 2rem 0">Seleziona il file PDF dal tuo computer</p>
             <form method="post" action="/do_analyze" enctype="multipart/form-data" style="background:var(--bg);padding:3rem;border-radius:12px;border:2px dashed var(--line)">
-                <input type="file" name="file" accept=".pdf" required style="font-size:1rem">
-                <button type="submit" class="btn2" style="background:var(--teal);padding:1rem 2rem;margin-top:1rem">Analizza ora</button>
+                <input type="file" name="file" accept=".pdf" required style="font-size:1rem;margin-bottom:1rem">
+                <br>
+                <button type="submit" class="btn2" style="background:var(--teal);padding:1rem 2rem">Analizza ora</button>
             </form>
-            <p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">I tuoi dati sono al sicuro. Cancellabili in qualsiasi momento.</p>
+            <p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">I tuoi dati sono al sicuro e cancellabili in qualsiasi momento.</p>
         </div>
-        """
+        '''
     else:
         session["onboarding_completed"] = True
         return redirect("/dashboard")
