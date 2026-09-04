@@ -1373,6 +1373,7 @@ def _stress_company(m, scenario):
 
 
 
+
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
@@ -1389,10 +1390,27 @@ def simula():
     cash = float(m.get("cassa") or 0)
     interest = float(m.get("interest") or 0)
     ebitda = float(m.get("ebitda") or max(ebit * 1.2, 0.1))
+    depreciation = float(m.get("depreciation") or max(ebit * 0.1, 0))
     
     rate = (interest / debt * 100) if debt > 0 else 5.0
     
-    # Scenario applicato (default: base)
+    # Nome azienda intelligente (fallback su filename se company è errato)
+    company_name = rep.company or ""
+    filename = rep.filename or ""
+    if company_name and filename:
+        # Se company e filename sono molto diversi, mostra entrambi
+        filename_clean = filename.replace('.pdf', '').replace('-', ' ').replace('_', ' ').strip()
+        if company_name.lower() not in filename_clean.lower() and filename_clean.lower() not in company_name.lower():
+            display_name = company_name
+            name_subtitle = "(file: " + filename + ")"
+        else:
+            display_name = company_name
+            name_subtitle = ""
+    else:
+        display_name = company_name or filename
+        name_subtitle = ""
+    
+    # Scenario applicato
     scenario = request.form.get("scenario", "base") if request.method == "POST" else "base"
     
     if scenario == "recession":
@@ -1410,7 +1428,9 @@ def simula():
     
     s_int = s_debt * (s_rate / 100)
     
-    # Calcolo Breaking Point
+    # ALGORITMO MIGLIORATO
+    
+    # 1. Breaking Point (quanto può crollare l'EBIT prima del default)
     if s_int > 0 and s_ebit > 0:
         bp = max(0, ((s_ebit - s_int) / s_ebit) * 100)
         ic = s_ebit / s_int
@@ -1418,37 +1438,60 @@ def simula():
         bp = 100.0 if s_int == 0 else 0.0
         ic = 999.0 if s_int == 0 else 0.0
     
-    # Cash Runway
-    monthly_burn = max((s_rev - s_ebit) / 12, s_rev / 24) if s_rev > 0 else 1
+    # 2. Debt/EBITDA (leverage)
+    debt_ebitda = s_debt / max(ebitda, 0.1)
+    
+    # 3. Cash Runway con burn rate REALISTICO
+    # Burn rate = uscite mensili totali (rata debito + interessi + costi operativi)
+    monthly_debt_payment = s_debt / 60  # stima: rimborso in 5 anni
+    monthly_interest = s_int / 12
+    monthly_operating = max((s_rev - s_ebit + depreciation) / 12, s_rev * 0.05)  # costi operativi mensili
+    monthly_burn = monthly_debt_payment + monthly_interest + monthly_operating
+    
     runway = s_cash / monthly_burn if monthly_burn > 0 else 999
     
-    # Risposta in italiano
-    company_name = rep.company or rep.filename
+    # 4. SCORE PONDERATO DI SOPRAVVIVENZA (0-100)
+    # Breaking Point: 35% del peso (max 35 punti se bp>=40%)
+    bp_score = min(bp / 40.0, 1.0) * 35
     
-    if bp >= 40 and ic >= 3.0 and runway >= 12:
+    # Interest Coverage: 25% del peso (max 25 punti se ic>=3.0)
+    ic_score = min(ic / 3.0, 1.0) * 25
+    
+    # Cash Runway: 20% del peso (max 20 punti se runway>=12 mesi)
+    runway_score = min(runway / 12.0, 1.0) * 20
+    
+    # Debt/EBITDA: 20% del peso (max 20 punti se de<2.0, zero se de>4.0)
+    de_score = max(0, (4.0 - debt_ebitda) / 2.0) * 20
+    
+    survival_score = bp_score + ic_score + runway_score + de_score
+    
+    # Verdetto basato su score ponderato
+    if survival_score >= 75:
         emoji, verdict, color = "🛡️", "SOPRAVVIVE ALLA CRISI", "#10b981"
-        explanation = "Anche con un crollo grave dei ricavi, l'azienda resta in piedi. Ha abbastanza cassa e margine operativo per resistere a una recessione prolungata."
-    elif bp >= 20 and ic >= 1.5:
+        explanation = "L'azienda è una fortezza finanziaria. Anche con un crollo grave dei ricavi, ha abbastanza margine operativo, cassa e struttura del debito per resistere a una recessione prolungata senza rischi di default."
+    elif survival_score >= 50:
         emoji, verdict, color = "️", "RESISTE, MA CON FATICA", "#fbbf24"
-        explanation = "L'azienda può sopportare una crisi moderata, ma non un crollo prolungato. I margini si riducono rapidamente e la cassa va monitorata."
-    elif bp >= 5:
-        emoji, verdict, color = "🚨", "IN PERICOLO", "#f97316"
-        explanation = "Basta un piccolo calo dei ricavi per mettere a rischio la sopravvivenza. L'azienda ha poca riserva di sicurezza."
+        explanation = "L'azienda può sopportare una crisi moderata, ma non un crollo prolungato. I margini si riducono rapidamente e la cassa va monitorata attentamente. Un peggioramento del 20-30% dei ricavi la porterebbe in zona di pericolo."
+    elif survival_score >= 25:
+        emoji, verdict, color = "", "IN PERICOLO", "#f97316"
+        explanation = "L'azienda ha poca riserva di sicurezza. Basta un piccolo calo dei ricavi o un aumento dei tassi per mettere a rischio la sopravvivenza. La struttura del debito è troppo pesante rispetto alla generazione di cassa."
     else:
         emoji, verdict, color = "💀", "NON SOPRAVVIVE", "#ef4444"
-        explanation = "L'azienda non ha margine di sicurezza. Un ulteriore shock la porterebbe al default tecnico (incapacità di pagare gli interessi)."
+        explanation = "L'azienda è in zona di default tecnico. L'EBIT attuale non copre nemmeno gli interessi, la cassa è insufficiente e il debito è insostenibile. Senza un intervento immediato (ricapitalizzazione o ristrutturazione), il fallimento è probabile."
     
-    # Costruzione HTML - Design minimalista
+    # COSTRUZIONE HTML - Design migliorato
     html = "<div style='max-width:800px;margin:0 auto;padding:2rem'>"
     
     # Header
     html += "<div style='text-align:center;margin-bottom:3rem'>"
     html += "<p style='color:var(--muted);font-size:0.9rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem'>Test di Sopravvivenza</p>"
-    html += "<h1 style='font-size:2rem;color:var(--text);margin:0'>" + company_name + "</h1>"
+    html += "<h1 style='font-size:2.5rem;color:var(--text);margin:0'>" + display_name + "</h1>"
+    if name_subtitle:
+        html += "<p style='color:var(--muted);font-size:0.9rem;margin-top:0.5rem'>" + name_subtitle + "</p>"
     html += "<p style='color:var(--muted);font-size:1.1rem;margin-top:0.5rem'>Sopravvive a una crisi grave?</p>"
     html += "</div>"
     
-    # Scenari rapidi
+    # Scenari rapidi (FLEX ROW, non colonna)
     html += "<form method='post' style='display:flex;gap:0.5rem;justify-content:center;margin-bottom:3rem;flex-wrap:wrap'>"
     for key, label in [("base", "Attuale"), ("recession", "Recessione"), ("crisis", "Crisi"), ("growth", "Crescita")]:
         active = "background:var(--gold);color:#0b1220" if scenario == key else "background:var(--bg);color:var(--text)"
@@ -1460,11 +1503,11 @@ def simula():
     html += "<div style='font-size:4rem;margin-bottom:1rem'>" + emoji + "</div>"
     html += "<h2 style='color:white;font-size:2rem;margin:0 0 1rem 0;font-weight:800'>" + verdict + "</h2>"
     html += "<p style='color:rgba(255,255,255,0.9);font-size:1.1rem;line-height:1.6;max-width:600px;margin:0 auto'>" + explanation + "</p>"
-    html += "<p style='color:rgba(255,255,255,0.7);font-size:0.9rem;margin-top:1.5rem'>Scenario: " + scenario_label + "</p>"
+    html += "<p style='color:rgba(255,255,255,0.7);font-size:0.9rem;margin-top:1.5rem'>Scenario: " + scenario_label + " | Score: " + str(round(survival_score, 0)) + "/100</p>"
     html += "</div>"
     
-    # 3 Metriche chiave
-    html += "<div style='display:grid;grid-template-columns:repeat(3, 1fr);gap:1rem;margin-bottom:2rem'>"
+    # 4 Metriche chiave (non 3)
+    html += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:1rem;margin-bottom:2rem'>"
     
     bp_color = "#10b981" if bp >= 40 else ("#fbbf24" if bp >= 20 else "#ef4444")
     html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;text-align:center;border-top:3px solid " + bp_color + "'>"
@@ -1486,6 +1529,12 @@ def simula():
     html += "<p style='font-size:2.5rem;font-weight:800;color:" + ic_color + ";margin:0'>" + ic_display + "</p>"
     html += "</div>"
     
+    de_color = "#10b981" if debt_ebitda < 2 else ("#fbbf24" if debt_ebitda < 3.5 else "#ef4444")
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;text-align:center;border-top:3px solid " + de_color + "'>"
+    html += "<p style='color:var(--muted);font-size:0.8rem;text-transform:uppercase;margin:0 0 0.5rem 0'>Debito/EBITDA</p>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + de_color + ";margin:0'>" + str(round(debt_ebitda, 1)) + "x</p>"
+    html += "</div>"
+    
     html += "</div>"
     
     # Dettagli tecnici (espandibili)
@@ -1499,12 +1548,13 @@ def simula():
     html += "<div><strong style='color:var(--muted)'>Cassa:</strong> " + str(round(s_cash, 1)) + " M€</div>"
     html += "<div><strong style='color:var(--muted)'>Tasso interesse:</strong> " + str(round(s_rate, 2)) + "%</div>"
     html += "<div><strong style='color:var(--muted)'>Interessi annui:</strong> " + str(round(s_int, 2)) + " M€</div>"
-    html += "<div><strong style='color:var(--muted)'>Debt/EBITDA:</strong> " + str(round(s_debt / max(ebitda, 0.1), 1)) + "x</div>"
-    html += "<div><strong style='color:var(--muted)'>DSCR:</strong> " + str(round(s_ebit / max(s_int, 0.1), 1)) + "x</div>"
+    html += "<div><strong style='color:var(--muted)'>EBITDA:</strong> " + str(round(ebitda, 1)) + " M€</div>"
+    html += "<div><strong style='color:var(--muted)'>Burn rate mensile:</strong> " + str(round(monthly_burn, 2)) + " M€</div>"
     html += "</div></div></details>"
     
     # Azioni
     html += "<div style='display:flex;gap:1rem;justify-content:center;flex-wrap:wrap'>"
+    html += "<a href='/analysis/" + str(rep.id) + "' class='btn2' style='background:var(--blue)'>Analisi completa</a>"
     html += "<a href='/analyze' class='btn2' style='background:var(--teal)'>Analizza altro bilancio</a>"
     html += "<a href='/cronologia' class='btn2' style='background:var(--gold);color:#0b1220'>Vedi cronologia</a>"
     html += "</div>"
