@@ -346,43 +346,89 @@ def favicon():
     return ("", 204)
 
 @app.route("/")
-def index():
+def landing():
     if current_user.is_authenticated:
-        report_count = Report.query.filter_by(user_id=current_user.id).count()
-        if report_count == 0:
-            welcome_msg = "Benvenuto in AUGET!"
-            welcome_sub = "Inizia la tua prova gratuita di 7 giorni. Nessun impegno."
-        else:
-            name = current_user.email.split('@')[0]
-            welcome_msg = "Bentornato, " + name + "!"
-            welcome_sub = "Come vuoi procedere oggi?"
-        content = "<div style='background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);padding:4rem 2rem;border-radius:16px;margin-bottom:2rem;text-align:center'>"
-        content += "<h1 style='color:#fbbf24;margin:0;font-size:3rem'>" + welcome_msg + "</h1>"
-        content += "<p style='color:#e2e8f0;font-size:1.3rem;margin:1rem 0 0 0'>" + welcome_sub + "</p>"
-        content += "</div>"
-        content += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1.5rem;margin-bottom:2rem'>"
-        content += "<div class='card' style='border:2px solid var(--teal);padding:2rem;text-align:center'><h2 style='color:var(--teal);margin-top:0'>Analizza un Nuovo Bilancio</h2><p style='color:var(--muted)'>Carica un bilancio aziendale e ottieni lo score AUGET in pochi secondi.</p><a href='/analyze' class='btn2' style='margin-top:1rem;display:inline-block'>Analizza Ora</a></div>"
-        content += "<div class='card' style='border:2px solid var(--gold);padding:2rem;text-align:center'><h2 style='color:var(--gold);margin-top:0'>La Tua Cronologia</h2><p style='color:var(--muted)'>Visualizza e gestisci tutte le analisi salvate automaticamente.</p><a href='/cronologia' class='btn2' style='margin-top:1rem;display:inline-block;background:var(--gold);color:#0b1220'>Vedi Cronologia</a></div>"
-        content += "<div class='card' style='border:2px solid var(--blue);padding:2rem;text-align:center'><h2 style='color:var(--blue);margin-top:0'>Stress Test</h2><p style='color:var(--muted)'>Simula scenari macroeconomici e valuta la resilienza aziendale.</p><a href='/simula' class='btn2' style='margin-top:1rem;display:inline-block;background:var(--blue)'>Simula</a></div>"
-        content += "</div>"
-        content += "<div class='card' style='background:var(--bg);padding:2rem;text-align:center'><h3 style='color:var(--gold);margin-top:0'>Cosa puoi fare con AUGET:</h3><ul style='list-style:none;padding:0;margin:1.5rem 0;line-height:2'><li>Punteggio 0-100 con verdetto immediato</li><li>40 indicatori su redditivita, cassa, crescita e valutazione</li><li>Simulazioni macro con scenari Bear/Base/Bull</li><li>Confronto tra aziende dello stesso settore</li></ul><p style='color:var(--muted);margin:1rem 0 0 0'>Hai gia analizzato <strong>" + str(report_count) + "</strong> " + ("azienda" if report_count == 1 else "aziende") + ".</p></div>"
-    else:
-        content = '<div class="card"><h1 style="font-size:2.8rem;margin:0;letter-spacing:4px">AUGET</h1>'
-        content += "<p style=\"font-size:1.2rem;color:var(--teal)\">Capire se un'azienda e solida, quanto vale e se il prezzo e giusto.</p>"
-        content += '<p><a href="/register"><button style="width:auto;margin:0 6px">Inizia gratis</button></a>'
-        content += '<a href="/login"><button class="btn2" style="width:auto;margin:0 6px">Accedi</button></a></p></div>'
-        content += '<div class="card"><h2>Cosa fa</h2><ul>'
-        content += '<li><strong style="color:var(--gold)">Punteggio 0-100</strong> con verdetto immediato</li>'
-        content += '<li><strong style="color:var(--gold)">40 indicatori</strong> su redditivita, cassa, crescita e valutazione</li>'
-        content += '<li><strong style="color:var(--gold)">20 indicatori bancari</strong> (ROE, ROA, CET1, NPL, Cost/Income)</li>'
-        content += '<li><strong style="color:var(--gold)">Simulazioni macro</strong> con scenari Bear/Base/Bull</li>'
-        content += '<li><strong style="color:var(--gold)">Classifica e confronto</strong> tra aziende</li>'
-        content += '</ul></div>'
-        content += '<div class="card" style="text-align:center"><h2 style="color:var(--teal)">Prova ora</h2>'
-        content += '<p style="color:var(--muted)">7 giorni gratis, senza carta di credito.</p>'
-        content += '<a href="/register"><button class="btn2" style="width:auto">Crea il tuo account</button></a></div>'
-    return render_template_string(BASE_TEMPLATE, title="AUGET", content=content)
-
+        return redirect("/dashboard")
+    
+    html = """
+    <div style="max-width:1200px;margin:0 auto;padding:2rem">
+        <!-- Hero -->
+        <div style="text-align:center;padding:4rem 2rem;background:linear-gradient(135deg, #1e3a8a 0%, #0f172a 100%);border-radius:20px;margin-bottom:3rem">
+            <h1 style="color:#fbbf24;font-size:3rem;margin:0 0 1rem 0">AUGET</h1>
+            <p style="color:#e2e8f0;font-size:1.5rem;margin:0 0 2rem 0">Analisi finanziaria automatica per commercialisti e consulenti</p>
+            <p style="color:#94a3b8;font-size:1.1rem;margin:0 0 2rem 0">Carica un bilancio PDF. Ottieni stress test, valutazione Buffett e report professionali in 30 secondi.</p>
+            <a href="/register" class="btn2" style="background:#10b981;padding:1rem 2rem;font-size:1.1rem">Inizia gratis (3 analisi/mese)</a>
+            <p style="color:#64748b;font-size:0.9rem;margin-top:1rem">Nessuna carta di credito richiesta</p>
+        </div>
+        
+        <!-- Features -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:2rem;margin-bottom:3rem">
+            <div style="background:var(--bg);padding:2rem;border-radius:12px">
+                <h3 style="color:var(--gold);margin-top:0">🛡️ Stress Test Accademico</h3>
+                <p style="color:var(--muted)">Altman Z-Score, Ohlson O-Score, DSCR Basilea III. Scopri se l'azienda sopravvive a una crisi.</p>
+            </div>
+            <div style="background:var(--bg);padding:2rem;border-radius:12px">
+                <h3 style="color:var(--gold);margin-top:0">📈 Valutazione Buffett</h3>
+                <p style="color:var(--muted)">10 pilastri del value investing. ROE, ROIC, DCF. Scopri se vale la pena investire.</p>
+            </div>
+            <div style="background:var(--bg);padding:2rem;border-radius:12px">
+                <h3 style="color:var(--gold);margin-top:0">📄 Report Professionali</h3>
+                <p style="color:var(--muted)">PDF brandizzati pronti per il cliente. Export Excel per analisi approfondite.</p>
+            </div>
+        </div>
+        
+        <!-- Pricing -->
+        <h2 style="text-align:center;color:var(--gold);margin-bottom:2rem">Piani e Prezzi</h2>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:2rem;margin-bottom:3rem">
+            <div style="background:var(--bg);padding:2rem;border-radius:12px;border:2px solid var(--line)">
+                <h3 style="color:var(--text);margin-top:0">Free</h3>
+                <p style="font-size:2.5rem;font-weight:800;color:var(--gold);margin:1rem 0">0€<span style="font-size:1rem;color:var(--muted)">/mese</span></p>
+                <ul style="color:var(--muted);list-style:none;padding:0">
+                    <li style="margin:0.5rem 0">✅ 3 analisi/mese</li>
+                    <li style="margin:0.5rem 0">✅ Stress Test base</li>
+                    <li style="margin:0.5rem 0">✅ Export PDF</li>
+                    <li style="margin:0.5rem 0;color:#64748b"> Analisi Buffett</li>
+                    <li style="margin:0.5rem 0;color:#64748b">❌ Confronto aziende</li>
+                </ul>
+                <a href="/register" class="btn2" style="display:block;text-align:center;margin-top:1rem">Inizia gratis</a>
+            </div>
+            <div style="background:linear-gradient(135deg, rgba(251,191,36,0.1), transparent);padding:2rem;border-radius:12px;border:2px solid #fbbf24;position:relative">
+                <div style="position:absolute;top:-12px;right:20px;background:#fbbf24;color:#0b1220;padding:0.3rem 1rem;border-radius:20px;font-size:0.8rem;font-weight:700">PIÙ POPOLARE</div>
+                <h3 style="color:var(--gold);margin-top:0">Pro</h3>
+                <p style="font-size:2.5rem;font-weight:800;color:var(--gold);margin:1rem 0">29€<span style="font-size:1rem;color:var(--muted)">/mese</span></p>
+                <ul style="color:var(--muted);list-style:none;padding:0">
+                    <li style="margin:0.5rem 0">✅ Analisi illimitate</li>
+                    <li style="margin:0.5rem 0">✅ Stress Test completo</li>
+                    <li style="margin:0.5rem 0">✅ Analisi Buffett 10 pilastri</li>
+                    <li style="margin:0.5rem 0">✅ Export PDF + Excel</li>
+                    <li style="margin:0.5rem 0">✅ Confronto aziende</li>
+                    <li style="margin:0.5rem 0">✅ Dashboard trend</li>
+                </ul>
+                <a href="/register?plan=pro" class="btn2" style="display:block;text-align:center;margin-top:1rem;background:#fbbf24;color:#0b1220">Scegli Pro</a>
+            </div>
+            <div style="background:var(--bg);padding:2rem;border-radius:12px;border:2px solid var(--line)">
+                <h3 style="color:var(--text);margin-top:0">Team</h3>
+                <p style="font-size:2.5rem;font-weight:800;color:var(--gold);margin:1rem 0">79€<span style="font-size:1rem;color:var(--muted)">/mese</span></p>
+                <ul style="color:var(--muted);list-style:none;padding:0">
+                    <li style="margin:0.5rem 0">✅ Tutto di Pro</li>
+                    <li style="margin:0.5rem 0">✅ 5 utenti inclusi</li>
+                    <li style="margin:0.5rem 0">✅ Report brandizzati</li>
+                    <li style="margin:0.5rem 0">✅ API access</li>
+                    <li style="margin:0.5rem 0">✅ Supporto prioritario</li>
+                </ul>
+                <a href="/register?plan=team" class="btn2" style="display:block;text-align:center;margin-top:1rem">Scegli Team</a>
+            </div>
+        </div>
+        
+        <!-- CTA finale -->
+        <div style="text-align:center;padding:3rem;background:var(--bg);border-radius:12px">
+            <h2 style="color:var(--gold);margin-top:0">Pronto a provare?</h2>
+            <p style="color:var(--muted);margin-bottom:2rem">Analizza il tuo primo bilancio in 30 secondi. Gratis.</p>
+            <a href="/register" class="btn2" style="background:#10b981;padding:1rem 2rem;font-size:1.1rem">Crea account gratuito</a>
+        </div>
+    </div>
+    """
+    return render_template_string(BASE_TEMPLATE, title="AUGET - Analisi Finanziaria Automatica", content=html)
 
 @app.route("/guida")
 def guida():
@@ -969,32 +1015,106 @@ def compare():
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    user = current_user
-    total_reports = Report.query.filter_by(user_id=user.id).count()
-    total_simulations = SavedSimulation.query.filter_by(user_id=user.id).count() if 'SavedSimulation' in globals() else 0
-    recent_reports = Report.query.filter_by(user_id=user.id).order_by(Report.created_at.desc()).limit(5).all()
+    reports = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).all()
     
-    content = "<div class='card'><h1> Dashboard</h1>"
-    content += f"<p style='color:var(--muted);font-size:1.1rem'>Benvenuto, {user.email}</p>"
+    if not reports:
+        # Primo accesso: redirect a onboarding
+        return redirect("/onboarding")
     
-    # Stats
-    content += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1.5rem;margin:2rem 0'>"
-    content += f"<div class='card' style='text-align:center;background:linear-gradient(135deg, rgba(45,212,167,0.1), transparent);border:2px solid var(--teal)'><h3 style='color:var(--teal);font-size:2.5rem;margin:0.5rem 0'>{total_reports}</h3><p style='color:var(--muted);margin:0'>Report Analizzati</p></div>"
-    content += f"<div class='card' style='text-align:center;background:linear-gradient(135deg, rgba(240,180,41,0.1), transparent);border:2px solid var(--gold)'><h3 style='color:var(--gold);font-size:2.5rem;margin:0.5rem 0'>{total_simulations}</h3><p style='color:var(--muted);margin:0'>Simulazioni</p></div>"
-    content += f"<div class='card' style='text-align:center;background:linear-gradient(135deg, rgba(59,130,246,0.1), transparent);border:2px solid var(--blue)'><h3 style='color:var(--blue);font-size:1.5rem;margin:0.5rem 0'>{(user.subscription_tier or 'free').upper()}</h3><p style='color:var(--muted);margin:0'>Piano Attivo</p></div>"
-    content += "</div>"
+    # KPI
+    total = len(reports)
+    scores = [r.score for r in reports if r.score]
+    avg_score = round(sum(scores) / len(scores), 1) if scores else 0
+    at_risk = sum(1 for s in scores if s and s < 45)
     
-    # Recent reports
-    if recent_reports:
-        content += "<h2 style='margin-top:2rem'>📈 Report Recenti</h2><div style='display:grid;gap:1rem;margin-top:1rem'>"
-        for r in recent_reports:
-            score_color = "#10b981" if (r.score or 0) >= 70 else ("#fbbf24" if (r.score or 0) >= 45 else "#ef4444")
-            content += f"<div class='card' style='display:flex;justify-content:space-between;align-items:center;padding:1rem'><div><h3 style='margin:0'>{r.company or r.filename}</h3><p style='color:var(--muted);margin:0.3rem 0 0 0'>{r.sector or 'Altro'} • {r.created_at.strftime('%d/%m/%Y')}</p></div><div style='font-size:2rem;font-weight:800;color:{score_color}'>{r.score or 'N/D'}/100</div></div>"
-        content += "</div>"
+    # Raggruppa per azienda per trend
+    companies = {}
+    for r in reports:
+        name = r.company or r.filename
+        if name not in companies:
+            companies[name] = []
+        companies[name].append({"date": r.created_at, "score": r.score, "id": r.id})
     
-    content += "<div style='margin-top:2rem;text-align:center'><a href='/simula' class='btn2' style='padding:1rem 2rem;font-size:1.1rem'>Nuova Simulazione</a> <a href='/reports' class='btn2' style='padding:1rem 2rem;font-size:1.1rem;background:var(--blue)'>Tutti i Report</a></div>"
-    content += "</div>"
-    return render_template_string(BASE_TEMPLATE, title="Dashboard", content=content)
+    # Ordina per data
+    for name in companies:
+        companies[name].sort(key=lambda x: x["date"])
+    
+    html = """<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <div style="max-width:1200px;margin:0 auto;padding:2rem">
+        <h1 style="color:var(--gold);margin-bottom:2rem">Dashboard</h1>
+        
+        <!-- KPI -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;margin-bottom:2rem">
+            <div style="background:var(--bg);padding:1.5rem;border-radius:12px;text-align:center">
+                <p style="color:var(--muted);margin:0">Analisi totali</p>
+                <p style="font-size:2.5rem;font-weight:800;color:var(--gold);margin:0.5rem 0">""" + str(total) + """</p>
+            </div>
+            <div style="background:var(--bg);padding:1.5rem;border-radius:12px;text-align:center">
+                <p style="color:var(--muted);margin:0">Score medio</p>
+                <p style="font-size:2.5rem;font-weight:800;color:#10b981;margin:0.5rem 0">""" + str(avg_score) + """</p>
+            </div>
+            <div style="background:var(--bg);padding:1.5rem;border-radius:12px;text-align:center">
+                <p style="color:var(--muted);margin:0">A rischio</p>
+                <p style="font-size:2.5rem;font-weight:800;color:#ef4444;margin:0.5rem 0">""" + str(at_risk) + """</p>
+            </div>
+        </div>
+        
+        <!-- Trend grafico -->
+        <div style="background:var(--bg);padding:2rem;border-radius:12px;margin-bottom:2rem">
+            <h3 style="color:var(--gold);margin-top:0">Andamento Score nel tempo</h3>
+            <canvas id="trendChart" height="100"></canvas>
+        </div>
+        
+        <!-- Aziende analizzate -->
+        <h3 style="color:var(--gold);margin-bottom:1rem">Aziende analizzate</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:1rem">
+    """
+    
+    for name, history in companies.items():
+        last = history[-1]
+        score = last["score"] or 0
+        color = "#10b981" if score >= 70 else ("#fbbf24" if score >= 45 else "#ef4444")
+        
+        html += '<div style="background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid ' + color + '">'
+        html += '<h4 style="color:var(--text);margin:0 0 0.5rem 0">' + name + '</h4>'
+        html += '<p style="color:var(--muted);font-size:0.9rem;margin:0 0 1rem 0">' + str(len(history)) + ' analisi</p>'
+        html += '<div style="display:flex;gap:0.5rem;flex-wrap:wrap">'
+        html += '<a href="/simula/' + str(last["id"]) + '" class="btn2" style="background:var(--teal);padding:0.5rem 1rem;font-size:0.9rem">Stress Test</a>'
+        html += '<a href="/analysis/' + str(last["id"]) + '" class="btn2" style="background:var(--blue);padding:0.5rem 1rem;font-size:0.9rem">Buffett</a>'
+        html += '</div></div>'
+    
+    html += """
+        </div>
+    </div>
+    
+    <script>
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: """ + str([r.created_at.strftime("%d/%m") if r.created_at else "" for r in reports[:20][::-1]]) + """,
+            datasets: [{
+                label: 'Score AUGET',
+                data: """ + str([r.score or 0 for r in reports[:20][::-1]]) + """,
+                borderColor: '#fbbf24',
+                backgroundColor: 'rgba(251,191,36,0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true, max: 100, ticks: { color: '#94a3b8' } },
+                x: { ticks: { color: '#94a3b8' } }
+            },
+            plugins: { legend: { labels: { color: '#94a3b8' } } }
+        }
+    });
+    </script>
+    """
+    
+    return render_template_string(BASE_TEMPLATE, title="Dashboard", content=html)
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -2236,3 +2356,46 @@ def analysis(rid):
     
     html += "<div style='display:flex;gap:1rem;justify-content:center;flex-wrap:wrap'><a href='/simula' class='btn2' style='background:var(--teal)'>Test di Sopravvivenza</a><a href='/cronologia' class='btn2' style='background:var(--gold);color:#0b1220'>Cronologia</a></div></div>"
     return render_template_string(BASE_TEMPLATE, title="Analisi Completa", content=html)
+
+@app.route("/onboarding")
+@login_required
+def onboarding():
+    # Controlla se l'utente ha già completato l'onboarding
+    if session.get("onboarding_completed"):
+        return redirect("/dashboard")
+    
+    step = request.args.get("step", "1")
+    
+    if step == "1":
+        html = """
+        <div style="max-width:600px;margin:0 auto;padding:3rem;text-align:center">
+            <h1 style="color:var(--gold);font-size:2.5rem">Benvenuto in AUGET</h1>
+            <p style="color:var(--muted);font-size:1.2rem;margin:1rem 0 2rem 0">Analizziamo il tuo primo bilancio in 30 secondi</p>
+            <div style="background:var(--bg);padding:2rem;border-radius:12px;margin-bottom:2rem">
+                <h3 style="color:var(--text)">Cosa ti serve:</h3>
+                <ul style="color:var(--muted);text-align:left;list-style:none;padding:0">
+                    <li style="margin:0.8rem 0">✅ Un bilancio in PDF (Stato Patrimoniale + Conto Economico)</li>
+                    <li style="margin:0.8rem 0">✅ 30 secondi del tuo tempo</li>
+                    <li style="margin:0.8rem 0">✅ Curiosità di scoprire la salute finanziaria</li>
+                </ul>
+            </div>
+            <a href="/onboarding?step=2" class="btn2" style="background:var(--teal);padding:1rem 2rem;font-size:1.1rem">Inizia →</a>
+        </div>
+        """
+    elif step == "2":
+        html = """
+        <div style="max-width:600px;margin:0 auto;padding:3rem;text-align:center">
+            <h2 style="color:var(--gold)">Carica il tuo primo bilancio</h2>
+            <p style="color:var(--muted);margin:1rem 0 2rem 0">Trascina qui il PDF o clicca per selezionarlo</p>
+            <form method="post" action="/do_analyze" enctype="multipart/form-data" style="background:var(--bg);padding:3rem;border-radius:12px;border:2px dashed var(--line)">
+                <input type="file" name="file" accept=".pdf" required style="font-size:1rem">
+                <button type="submit" class="btn2" style="background:var(--teal);padding:1rem 2rem;margin-top:1rem">Analizza ora</button>
+            </form>
+            <p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">I tuoi dati sono al sicuro. Cancellabili in qualsiasi momento.</p>
+        </div>
+        """
+    else:
+        session["onboarding_completed"] = True
+        return redirect("/dashboard")
+    
+    return render_template_string(BASE_TEMPLATE, title="Onboarding AUGET", content=html)
