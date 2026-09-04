@@ -9,6 +9,7 @@ from functools import wraps
 import json as _json
 import secrets as _secrets
 import hashlib as _hashlib
+import PyPDF2
 
 try:
     import tkinter
