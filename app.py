@@ -348,7 +348,7 @@ def favicon():
 @app.route("/")
 def landing():
     if current_user.is_authenticated:
-        return redirect("/dashboard")
+        return redirect("/dashboard")  # Redirect gestito correttamente
     
     html = """
     <div style="max-width:1200px;margin:0 auto;padding:2rem">
