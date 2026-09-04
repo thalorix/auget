@@ -2360,6 +2360,7 @@ def analysis(rid):
 
 
 
+
 @app.route("/onboarding")
 @login_required
 def onboarding():
@@ -2369,7 +2370,7 @@ def onboarding():
     step = request.args.get("step", "1")
     
     if step == "1":
-        html = """
+        html = '''
         <div style="max-width:600px;margin:0 auto;padding:3rem;text-align:center">
             <h1 style="color:var(--gold);font-size:2.5rem">Benvenuto in AUGET</h1>
             <p style="color:var(--muted);font-size:1.2rem;margin:1rem 0 2rem 0">Analizziamo il tuo primo bilancio in 30 secondi</p>
@@ -2383,9 +2384,9 @@ def onboarding():
             </div>
             <a href="/onboarding?step=2" class="btn2" style="background:var(--teal);padding:1rem 2rem;font-size:1.1rem">Inizia →</a>
         </div>
-        """
+        '''
     elif step == "2":
-        html = """
+        html = '''
         <div style="max-width:600px;margin:0 auto;padding:3rem;text-align:center">
             <h2 style="color:var(--gold)">Carica il tuo primo bilancio</h2>
             <p style="color:var(--muted);margin:1rem 0 2rem 0">Seleziona il file PDF dal tuo computer</p>
@@ -2396,7 +2397,7 @@ def onboarding():
             </form>
             <p style="color:var(--muted);font-size:0.9rem;margin-top:1rem">I tuoi dati sono al sicuro e cancellabili in qualsiasi momento.</p>
         </div>
-        """
+        '''
     else:
         session["onboarding_completed"] = True
         return redirect("/dashboard")
