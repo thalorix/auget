@@ -1165,36 +1165,120 @@ def checkout(tier):
     flash(f"Piano {tier} attivato!", "success")
     return redirect(url_for("analyze_page"))
 
+
 @app.route("/analyze")
 @login_required
-@subscription_required
-def analyze_page():
-    lim = PLAN_LIMITS.get(current_user.subscription_tier)
-    used = _used_this_month(current_user.id)
-    counter = f"<p style='color:var(--muted)'>Analisi questo mese: {used}" + (f" / {lim}" if lim else " (illimitate)") + "</p>"
-    content = f"""<div class="card"><h1>Analizza Bilancio</h1>{counter}
-    <form method="post" enctype="multipart/form-data" action="/do_analyze">
-      <input type="file" name="report" accept=".pdf,.docx,.txt,.html,.htm" required>
-      <button type="submit" id="analyze-btn" style="margin-top:1rem">Analizza</button>
-      <div id="progress-container" style="display:none;margin-top:1rem">
-        <div style="background:var(--bg);border-radius:8px;overflow:hidden;height:30px;border:2px solid var(--line)">
-          <div id="progress-bar" style="width:0%;height:100%;background:linear-gradient(90deg, #10b981, #059669);transition:width 0.3s ease;display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:0.9rem">0%</div>
+def analyze():
+    try: db.create_all()
+    except: pass
+    
+    # Conta analisi del mese
+    from datetime import datetime, timedelta
+    start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    monthly_count = Report.query.filter(
+        Report.user_id == current_user.id,
+        Report.created_at >= start
+    ).count()
+    
+    # Controlla limite piano
+    tier = current_user.subscription_tier or "free"
+    limits = {"free": 3, "pro": 9999, "team": 9999, "demo": 9999, "admin": 9999}
+    limit = limits.get(tier, 3)
+    can_analyze = monthly_count < limit
+    
+    html = '''
+    <div style="max-width:700px;margin:0 auto;padding:2rem">
+        <h1 style="color:var(--gold);margin-bottom:1rem">Analizza Bilancio</h1>
+        <p style="color:var(--muted);margin-bottom:2rem">Carica un bilancio in PDF per estrarre i dati finanziari automaticamente.</p>
+        
+        <div style="background:var(--bg);padding:1.5rem;border-radius:12px;margin-bottom:1.5rem">
+            <p style="color:var(--text);margin:0 0 0.5rem 0"><strong>Analisi questo mese:</strong> ''' + str(monthly_count) + ''' / ''' + ("∞" if limit > 100 else str(limit)) + '''</p>
+            <p style="color:var(--muted);font-size:0.9rem;margin:0">Piano: ''' + tier.upper() + '''</p>
         </div>
-        <p id="progress-text" style="text-align:center;margin-top:0.5rem;color:var(--muted);font-size:0.95rem">Inizio analisi...</p>
-      </div></form></div>"""
-    return render_template_string(BASE_TEMPLATE, title="Analizza", content=content)
-
+        
+        <form id="analyzeForm" method="post" action="/do_analyze" enctype="multipart/form-data" style="background:var(--bg);padding:3rem;border-radius:12px;border:2px dashed var(--line);text-align:center;transition:all 0.3s">
+            <div id="dropZone" style="padding:2rem">
+                <p style="color:var(--gold);font-size:1.2rem;margin:0 0 1rem 0">📄 Trascina qui il PDF o clicca per selezionarlo</p>
+                <p style="color:var(--muted);font-size:0.9rem;margin:0 0 2rem 0">Formato supportato: PDF (bilancio completo con Stato Patrimoniale e Conto Economico)</p>
+                <input type="file" id="fileInput" name="file" accept=".pdf" required style="display:none">
+                <button type="button" onclick="document.getElementById('fileInput').click()" class="btn2" style="background:var(--teal);padding:1rem 2rem;margin-bottom:1rem">Seleziona File</button>
+                <p id="fileName" style="color:var(--text);font-weight:600;margin:1rem 0 0 0"></p>
+            </div>
+            <button type="submit" id="submitBtn" class="btn2" style="background:var(--gold);color:#0b1220;padding:1rem 2rem;margin-top:1.5rem;width:100%;font-size:1.1rem;font-weight:700" disabled>Analizza Bilancio</button>
+        </form>
+        
+        <div style="margin-top:2rem;padding:1.5rem;background:var(--bg);border-radius:12px">
+            <h3 style="color:var(--gold);margin:0 0 1rem 0"> Cosa estraiamo dal PDF:</h3>
+            <ul style="color:var(--muted);margin:0;padding-left:1.5rem">
+                <li>Ricavi, EBIT, EBITDA</li>
+                <li>Debito finanziario, Cassa</li>
+                <li>Totale Attivo, Passività</li>
+                <li>Capitale Circolante, Utile Netto</li>
+            </ul>
+            <p style="color:var(--muted);font-size:0.9rem;margin:1rem 0 0 0">⚠️ Per risultati ottimali, carica un bilancio completo. Dati mancanti = analisi limitata.</p>
+        </div>
+    </div>
+    
+    <script>
+    const fileInput = document.getElementById('fileInput');
+    const fileName = document.getElementById('fileName');
+    const submitBtn = document.getElementById('submitBtn');
+    const dropZone = document.getElementById('dropZone');
+    const form = document.getElementById('analyzeForm');
+    
+    fileInput.addEventListener('change', function() {
+        if (this.files && this.files[0]) {
+            fileName.textContent = '✅ ' + this.files[0].name;
+            submitBtn.disabled = false;
+            dropZone.style.borderColor = '#10b981';
+        }
+    });
+    
+    // Drag and drop
+    dropZone.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        dropZone.style.borderColor = '#fbbf24';
+        dropZone.style.background = 'rgba(251,191,36,0.05)';
+    });
+    
+    dropZone.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--line)';
+        dropZone.style.background = 'transparent';
+    });
+    
+    dropZone.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dropZone.style.borderColor = 'var(--line)';
+        dropZone.style.background = 'transparent';
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            fileInput.files = e.dataTransfer.files;
+            fileName.textContent = '✅ ' + e.dataTransfer.files[0].name;
+            submitBtn.disabled = false;
+        }
+    });
+    
+    form.addEventListener('submit', function(e) {
+        if (!fileInput.files || !fileInput.files[0]) {
+            e.preventDefault();
+            alert('⚠️ Seleziona prima un file PDF');
+        }
+    });
+    </script>
+    '''
+    
+    return render_template_string(BASE_TEMPLATE, title="Analizza Bilancio", content=html)
 
 @app.route("/do_analyze", methods=["POST"])
 @login_required
 def do_analyze():
     if 'file' not in request.files:
-        flash("Nessun file caricato", "error")
+        flash("⚠️ Nessun file selezionato. Clicca su 'Seleziona File' e scegli un PDF.", "warning")
         return redirect("/analyze")
     
     file = request.files['file']
     if file.filename == '':
-        flash("Nessun file selezionato", "error")
+        flash("⚠️ Nessun file selezionato. Clicca su 'Seleziona File' e scegli un PDF.", "warning")
         return redirect("/analyze")
     
     if file and file.filename.endswith('.pdf'):
