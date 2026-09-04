@@ -1376,6 +1376,7 @@ def _stress_company(m, scenario):
 
 
 
+
 @app.route("/simula", methods=["GET", "POST"])
 @login_required
 def simula():
@@ -1383,247 +1384,199 @@ def simula():
     except: pass
     rep = Report.query.filter_by(user_id=current_user.id).order_by(Report.created_at.desc()).first()
     if not rep:
-        return render_template_string(BASE_TEMPLATE, title="Test di Sopravvivenza", content="<div class='card' style='text-align:center;padding:4rem'><h1 style='font-size:2.5rem;color:var(--gold);margin-bottom:1rem'>Test di Sopravvivenza</h1><p style='font-size:1.2rem;color:var(--muted);margin-bottom:2rem'>Carica prima un bilancio per scoprire se l'azienda sopravvive a una crisi.</p><a href='/analyze' class='btn2' style='background:var(--teal);padding:1rem 2rem'>Analizza un Bilancio</a></div>")
+        return render_template_string(BASE_TEMPLATE, title="Buffett Analyzer", content="<div class='card' style='text-align:center;padding:4rem'><h1 style='font-size:2.5rem;color:var(--gold);margin-bottom:1rem'>Buffett Value Analyzer</h1><p style='font-size:1.2rem;color:var(--muted);margin-bottom:2rem'>Carica un bilancio per scoprire se è un ottimo investimento secondo i principi di Warren Buffett.</p><a href='/analyze' class='btn2' style='background:var(--teal);padding:1rem 2rem'>Analizza un Bilancio</a></div>")
     
     m = _json.loads(rep.metrics_json or "{}")
     rev = float(m.get("revenue") or 0)
     ebit = float(m.get("ebit") or 0)
-    debt = float(m.get("total_debt") or 0)
-    cash = float(m.get("cassa") or 0)
-    interest = float(m.get("interest") or 0)
-    ebitda = float(m.get("ebitda") or max(ebit * 1.2, 0.1))
-    depreciation = float(m.get("depreciation") or max(ebit * 0.1, 0))
     net_income = float(m.get("net_income") or max(ebit * 0.7, 0))
     total_assets = float(m.get("total_assets") or max(rev * 1.5, 1))
-    total_liabilities = float(m.get("total_liabilities") or max(debt * 1.5, 1))
+    total_liabilities = float(m.get("total_liabilities") or max(rev * 0.8, 1))
     equity = max(total_assets - total_liabilities, 0.1)
-    retained_earnings = float(m.get("retained_earnings") or max(equity * 0.5, 0))
     working_capital = float(m.get("working_capital") or max(rev * 0.1, 0))
+    current_assets = float(m.get("current_assets") or max(working_capital * 1.5, 1))
+    current_liabilities = float(m.get("current_liabilities") or max(working_capital * 0.5, 1))
+    interest = float(m.get("interest") or 0)
+    ebitda = float(m.get("ebitda") or max(ebit * 1.2, 0.1))
     capex = float(m.get("capex") or max(ebit * 0.15, 0))
-    tax_rate = float(m.get("tax_rate") or 0.24)
+    depreciation = float(m.get("depreciation") or max(ebit * 0.1, 0))
+    shares = float(m.get("shares") or 1)
+    market_cap = float(m.get("market_cap") or 0)
     
-    rate = (interest / debt * 100) if debt > 0 else 5.0
+    # Dati di mercato reali (Yahoo Finance)
+    ticker = rep.ticker_symbol or "" if hasattr(rep, 'ticker_symbol') else ""
+    market_data = get_market_data(ticker) if ticker else {"success": False}
     
-    # Nome azienda
+    if market_data["success"]:
+        market_cap = market_data["market_cap"] / 1e6 if market_data["market_cap"] > 0 else market_cap
+        shares = market_data["shares"] / 1e6 if market_data["shares"] > 0 else shares
+        current_price = market_data["current_price"]
+    
+    # ========================================================================
+    # I 10 PILASTRI DI BUFFETT
+    # ========================================================================
+    
+    # 1. ROE (Return on Equity)
+    roe = (net_income / equity) * 100 if equity > 0 else 0
+    roe_score = 20 if roe > 15 else (15 if roe > 10 else (10 if roe > 5 else 0))
+    
+    # 2. ROIC (Return on Invested Capital)
+    invested_capital = equity + total_liabilities - current_liabilities
+    roic = (ebit * (1 - 0.24) / invested_capital) * 100 if invested_capital > 0 else 0
+    roic_score = 20 if roic > 12 else (15 if roic > 8 else (10 if roic > 5 else 0))
+    
+    # 3. Gross Margin (stima)
+    gross_margin = (ebitda / rev) * 100 if rev > 0 else 0
+    margin_score = 15 if gross_margin > 40 else (12 if gross_margin > 25 else (8 if gross_margin > 15 else 0))
+    
+    # 4. Debt/Equity
+    debt_equity = total_liabilities / equity if equity > 0 else 999
+    debt_score = 15 if debt_equity < 0.5 else (12 if debt_equity < 1.0 else (8 if debt_equity < 1.5 else 0))
+    
+    # 5. Current Ratio
+    current_ratio = current_assets / current_liabilities if current_liabilities > 0 else 0
+    liquidity_score = 10 if current_ratio > 1.5 else (7 if current_ratio > 1.2 else (4 if current_ratio > 1.0 else 0))
+    
+    # 6. Interest Coverage
+    interest_coverage = ebit / interest if interest > 0 else 999
+    interest_score = 10 if interest_coverage > 5 else (7 if interest_coverage > 3 else (4 if interest_coverage > 1.5 else 0))
+    
+    # 7. FCF Yield
+    fcf = ebit * (1 - 0.24) + depreciation - capex
+    fcf_yield = (fcf / market_cap) * 100 if market_cap > 0 else 0
+    fcf_score = 10 if fcf_yield > 5 else (7 if fcf_yield > 3 else (4 if fcf_yield > 1 else 0))
+    
+    # 8. P/E Ratio
+    eps = net_income / shares if shares > 0 else 0
+    pe_ratio = current_price / eps if current_price > 0 and eps > 0 else 0
+    pe_score = 10 if 0 < pe_ratio < 15 else (8 if 0 < pe_ratio < 25 else (5 if pe_ratio > 25 else 0))
+    
+    # 9. P/B Ratio
+    book_value = equity / shares if shares > 0 else 0
+    pb_ratio = current_price / book_value if current_price > 0 and book_value > 0 else 0
+    pb_score = 5 if 0 < pb_ratio < 1.5 else (4 if 0 < pb_ratio < 3 else (2 if pb_ratio > 3 else 0))
+    
+    # 10. DCF Semplificato (Valore Intrinseco)
+    growth_rate = 0.03
+    discount_rate = 0.10
+    terminal_value = fcf * (1 + growth_rate) / max(discount_rate - growth_rate, 0.01)
+    intrinsic_value = terminal_value / shares if shares > 0 else 0
+    upside = ((intrinsic_value - current_price) / current_price) * 100 if current_price > 0 else 0
+    valuation_score = 10 if upside > 30 else (8 if upside > 10 else (5 if upside > -10 else 0))
+    
+    # BUFFETT SCORE TOTALE (0-100)
+    buffett_score = roe_score + roic_score + margin_score + debt_score + liquidity_score + interest_score + fcf_score + pe_score + pb_score + valuation_score
+    
+    # VERDETTO
+    if buffett_score >= 80:
+        emoji, verdict, color = "🏆", "WONDERFUL COMPANY", "#10b981"
+        explanation = "Azienda eccellente con moat forte, bilanci solidi e prezzo attraente. Warren Buffett la comprerebbe senza esitazione."
+    elif buffett_score >= 60:
+        emoji, verdict, color = "✅", "GOOD COMPANY", "#3b82f6"
+        explanation = "Buona azienda con fondamentali solidi. Valuta il prezzo di ingresso: se in sconto rispetto al valore intrinseco, può essere un buon investimento."
+    elif buffett_score >= 40:
+        emoji, verdict, color = "⚠️", "FAIR COMPANY", "#fbbf24"
+        explanation = "Azienda nella media. Né carne né pesce. Potrebbe avere qualche punto debole nei fondamentali o essere sopravvalutata dal mercato."
+    else:
+        emoji, verdict, color = "", "AVOID", "#ef4444"
+        explanation = "Azienda con fondamentali deboli o troppo costosa. Buffett la eviterebbe. Cerca opportunità migliori."
+    
     company_name = rep.company or rep.filename or "Azienda"
     
-    # Scenario applicato
-    scenario = request.form.get("scenario", "base") if request.method == "POST" else "base"
-    
-    if scenario == "recession":
-        s_rev, s_ebit, s_debt, s_rate, s_cash = rev * 0.85, ebit * 0.70, debt, rate + 1.0, cash
-        scenario_label = "Recessione moderata"
-    elif scenario == "crisis":
-        s_rev, s_ebit, s_debt, s_rate, s_cash = rev * 0.60, ebit * 0.25, debt * 1.15, rate + 2.5, cash * 0.70
-        scenario_label = "Crisi grave"
-    elif scenario == "growth":
-        s_rev, s_ebit, s_debt, s_rate, s_cash = rev * 1.25, ebit * 1.45, debt * 1.30, rate, cash * 0.80
-        scenario_label = "Crescita aggressiva"
-    else:
-        s_rev, s_ebit, s_debt, s_rate, s_cash = rev, ebit, debt, rate, cash
-        scenario_label = "Situazione attuale"
-    
-    s_int = s_debt * (s_rate / 100)
-    s_ebitda = max(s_ebit * 1.2, 0.1)
-    
-    # ========================================================================
-    # MODELLI ACCADEMICI INTEGRATI
-    # ========================================================================
-    
-    # 1. ALTMAN Z-SCORE (Stress-Adjusted)
-    x1 = working_capital / max(total_assets, 0.1)
-    x2 = retained_earnings / max(total_assets, 0.1)
-    x3 = s_ebit / max(total_assets, 0.1)  # EBIT sotto stress
-    x4 = equity / max(total_liabilities, 0.1)
-    x5 = s_rev / max(total_assets, 0.1)  # Ricavi sotto stress
-    altman_z = 1.2*x1 + 1.4*x2 + 3.3*x3 + 0.6*x4 + 1.0*x5
-    
-    if altman_z > 2.99: altman_status = "SOLIDA"
-    elif altman_z > 1.81: altman_status = "ZONA GRIGIA"
-    else: altman_status = "A RISCHIO"
-    
-    # 2. OHLSON O-SCORE (Probabilità di Default)
-    # Formula semplificata con 9 variabili (Ohlson 1980)
-    size = math.log(total_assets / 1000000) if total_assets > 0 else 0  # Dimensione (log asset in milioni)
-    tlta = total_liabilities / max(total_assets, 0.1)  # Totale passività / totale attivo
-    wcta = working_capital / max(total_assets, 0.1)  # Capitale circolante / totale attivo
-    clca = 1.0 if (working_capital < 0) else 0.0  # Current liabilities > current assets
-    oenega = 1.0 if (total_liabilities > total_assets) else 0.0  # Negative equity
-    futl = total_liabilities / max(total_assets, 0.1)  # Stesso di TLTA
-    chin = (net_income - ebit) / max(abs(net_income), 0.1) if net_income != 0 else 0  # Variazione reddito netto
-    intwo = 1.0 if (net_income < 0 and ebit < 0) else 0.0  # Perdite negli ultimi 2 anni
-    oachg = (ebitda - ebit) / max(ebitda, 0.1) if ebitda > 0 else 0  # Variazione OCF
-    
-    # Coefficienti di Ohlson (1980)
-    ohlson_o = -2.53 + (-0.407 * size) + (6.03 * tlta) + (1.43 * wcta) + (0.076 * clca) + (0.001 * oenega) + (1.72 * futl) + (0.52 * chin) + (0.45 * intwo) + (0.36 * oachg)
-    
-    # Converti O-Score in probabilità di default (funzione logistica)
-    prob_default = 1 / (1 + math.exp(-ohlson_o)) * 100
-    
-    if prob_default < 10: ohlson_status = "BASSA"
-    elif prob_default < 25: ohlson_status = "MEDIA"
-    elif prob_default < 50: ohlson_status = "ALTA"
-    else: ohlson_status = "CRITICA"
-    
-    # 3. DSCR REGOLAMENTARE (Basilea III / EBA)
-    # DSCR = (EBITDA - Tasse - Capex Obbligatori) / (Rate Debito + Interessi)
-    taxes = s_ebit * tax_rate
-    mandatory_capex = capex * 0.7  #假设 70% dei capex sono obbligatori (mantenimento)
-    numerator = s_ebitda - taxes - mandatory_capex
-    
-    # Stima rata debito (ammortamento in 5-7 anni)
-    debt_maturity = 6  # anni
-    annual_debt_payment = s_debt / debt_maturity
-    denominator = annual_debt_payment + s_int
-    
-    dscr = numerator / max(denominator, 0.1)
-    
-    if dscr >= 1.5: dscr_status = "SOLIDO"
-    elif dscr >= 1.25: dscr_status = "ACCETTABILE"
-    elif dscr >= 1.0: dscr_status = "AL LIMITE"
-    else: dscr_status = "INSOLVENTE"
-    
-    # 4. BREAKING POINT (Interest Coverage)
-    if s_int > 0 and s_ebit > 0:
-        bp = max(0, ((s_ebit - s_int) / s_ebit) * 100)
-        ic = s_ebit / s_int
-    else:
-        bp = 100.0 if s_int == 0 else 0.0
-        ic = 999.0 if s_int == 0 else 0.0
-    
-    # 5. CASH RUNWAY (Burn rate realistico)
-    monthly_debt_payment = s_debt / (debt_maturity * 12)
-    monthly_interest = s_int / 12
-    monthly_operating = max((s_rev - s_ebit + depreciation) / 12, s_rev * 0.05)
-    monthly_burn = monthly_debt_payment + monthly_interest + monthly_operating
-    runway = s_cash / monthly_burn if monthly_burn > 0 else 999
-    
-    # VERDETTO FINALE (basato sui 3 modelli accademici)
-    critical_count = 0
-    if altman_z < 1.81: critical_count += 1
-    if prob_default > 25: critical_count += 1
-    if dscr < 1.0: critical_count += 1
-    
-    warning_count = 0
-    if altman_z < 2.99: warning_count += 1
-    if prob_default > 10: warning_count += 1
-    if dscr < 1.25: warning_count += 1
-    
-    if critical_count >= 2:
-        emoji, verdict, color = "", "NON SOPRAVVIVE", "#ef4444"
-        explanation = "L'analisi con modelli accademici rivela una situazione critica. La probabilità di default è elevata, l'Altman Z-Score indica zona di fallimento e il DSCR è sotto la soglia di insolvenza. Senza interventi strutturali (ricapitalizzazione o ristrutturazione del debito), il fallimento è probabile entro 12-24 mesi."
-    elif critical_count == 1 or warning_count >= 2:
-        emoji, verdict, color = "", "IN PERICOLO", "#f97316"
-        explanation = "Almeno due dei tre indicatori accademici segnalano rischio elevato. L'azienda ha poca riserva di sicurezza e un peggioramento dei ricavi o un aumento dei tassi la porterebbe rapidamente in default tecnico."
-    elif warning_count >= 1:
-        emoji, verdict, color = "️", "RESISTE, MA CON FATICA", "#fbbf24"
-        explanation = "L'azienda può sopportare una crisi moderata, ma i margini di sicurezza si stanno riducendo. Gli indicatori accademici mostrano segnali di allerta che richiedono monitoraggio costante della cassa e del debito."
-    else:
-        emoji, verdict, color = "🛡️", "SOPRAVVIVE ALLA CRISI", "#10b981"
-        explanation = "Tutti e tre i modelli accademici confermano la solidità aziendale. Anche sotto stress grave, l'Altman Z-Score resta in zona sicura, la probabilità di default è bassa e il DSCR supera le soglie regolamentari di Basilea III."
-    
-    # COSTRUZIONE HTML
-    html = "<div style='max-width:1000px;margin:0 auto;padding:2rem'>"
+    # HTML
+    html = "<div style='max-width:1100px;margin:0 auto;padding:2rem'>"
     
     # Header
     html += "<div style='text-align:center;margin-bottom:3rem'>"
-    html += "<p style='color:var(--muted);font-size:0.9rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem'>Test di Sopravvivenza con Modelli Accademici</p>"
+    html += "<p style='color:var(--muted);font-size:0.9rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:0.5rem'>Buffett Value Analyzer</p>"
     html += "<h1 style='font-size:2.5rem;color:var(--text);margin:0'>" + company_name + "</h1>"
-    html += "<p style='color:var(--muted);font-size:1.1rem;margin-top:0.5rem'>Sopravvive a una crisi grave?</p>"
+    if market_data["success"]:
+        html += "<p style='color:var(--muted);font-size:0.9rem;margin-top:0.5rem'>Dati di mercato: Yahoo Finance (Prezzo: " + str(round(current_price, 2)) + "€ | Market Cap: " + str(round(market_cap, 1)) + " M€)</p>"
+    html += "<p style='color:var(--muted);font-size:1.1rem;margin-top:0.5rem'>Vale la pena investire secondo i principi di Warren Buffett?</p>"
     html += "</div>"
     
-    # Scenari
-    html += "<form method='post' style='display:flex;gap:0.5rem;justify-content:center;margin-bottom:3rem;flex-wrap:wrap'>"
-    for key, label in [("base", "Attuale"), ("recession", "Recessione"), ("crisis", "Crisi"), ("growth", "Crescita")]:
-        active = "background:var(--gold);color:#0b1220" if scenario == key else "background:var(--bg);color:var(--text)"
-        html += "<button type='submit' name='scenario' value='" + key + "' style='padding:0.6rem 1.2rem;border-radius:20px;border:none;cursor:pointer;font-size:0.9rem;font-weight:600;" + active + "'>" + label + "</button>"
-    html += "</form>"
-    
-    # Box verdetto
+    # Box Verdetto
     html += "<div style='background:" + color + ";border-radius:16px;padding:3rem 2rem;text-align:center;margin-bottom:2rem;box-shadow:0 10px 40px rgba(0,0,0,0.3)'>"
     html += "<div style='font-size:4rem;margin-bottom:1rem'>" + emoji + "</div>"
     html += "<h2 style='color:white;font-size:2rem;margin:0 0 1rem 0;font-weight:800'>" + verdict + "</h2>"
     html += "<p style='color:rgba(255,255,255,0.9);font-size:1.1rem;line-height:1.6;max-width:700px;margin:0 auto'>" + explanation + "</p>"
-    html += "<p style='color:rgba(255,255,255,0.7);font-size:0.9rem;margin-top:1.5rem'>Scenario: " + scenario_label + "</p>"
-    html += "</div>"
+    html += "<div style='margin-top:2rem;background:rgba(255,255,255,0.2);padding:1rem;border-radius:8px;display:inline-block'>"
+    html += "<p style='color:white;font-size:0.9rem;margin:0'>Buffett Score</p>"
+    html += "<p style='color:white;font-size:3rem;font-weight:900;margin:0.5rem 0'>" + str(buffett_score) + "<span style='font-size:1.5rem'>/100</span></p>"
+    html += "</div></div>"
     
-    # 3 MODELLI ACCADEMICI (card principali)
-    html += "<h3 style='color:var(--gold);margin:2rem 0 1rem 0;text-align:center'>📊 Analisi con Modelli Accademici</h3>"
-    html += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:1.5rem;margin-bottom:2rem'>"
+    # I 10 Pilastri
+    html += "<h3 style='color:var(--gold);margin:2rem 0 1rem 0;text-align:center'>📊 I 10 Pilastri di Buffett</h3>"
+    html += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));gap:1.5rem;margin-bottom:2rem'>"
     
-    # Altman Z-Score
-    altman_color = "#10b981" if altman_z > 2.99 else ("#fbbf24" if altman_z > 1.81 else "#ef4444")
-    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + altman_color + "'>"
-    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>Altman Z-Score</h4>"
-    html += "<p style='font-size:3rem;font-weight:800;color:" + altman_color + ";margin:0.5rem 0'>" + str(round(altman_z, 2)) + "</p>"
-    html += "<p style='color:var(--muted);font-size:0.9rem;margin:0.5rem 0'><strong>Stato:</strong> " + altman_status + "</p>"
-    html += "<p style='color:var(--muted);font-size:0.85rem'>Prevede il fallimento a 2 anni. Z > 2.99 = Sicuro | 1.81-2.99 = Zona Grigia | < 1.81 = Distress</p>"
-    html += "</div>"
+    # Quality Metrics
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if roe > 15 else "#fbbf24" if roe > 10 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>1. ROE (Return on Equity)</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if roe > 15 else "#fbbf24" if roe > 10 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(roe, 1)) + "%</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: >15% = Eccellente | >10% = Buono</p></div>"
     
-    # Ohlson O-Score
-    ohlson_color = "#10b981" if prob_default < 10 else ("#fbbf24" if prob_default < 25 else ("#f97316" if prob_default < 50 else "#ef4444"))
-    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ohlson_color + "'>"
-    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>Ohlson O-Score</h4>"
-    html += "<p style='font-size:3rem;font-weight:800;color:" + ohlson_color + ";margin:0.5rem 0'>" + str(round(prob_default, 1)) + "%</p>"
-    html += "<p style='color:var(--muted);font-size:0.9rem;margin:0.5rem 0'><strong>Probabilità di Default:</strong> " + ohlson_status + "</p>"
-    html += "<p style='color:var(--muted);font-size:0.85rem'>Modello di regressione logistica (Ohlson 1980). PD < 10% = Bassa | 10-25% = Media | > 25% = Alta</p>"
-    html += "</div>"
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if roic > 12 else "#fbbf24" if roic > 8 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>2. ROIC (Return on Invested Capital)</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if roic > 12 else "#fbbf24" if roic > 8 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(roic, 1)) + "%</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: >12% = Moat Forte | >8% = Buono</p></div>"
     
-    # DSCR
-    dscr_color = "#10b981" if dscr >= 1.5 else ("#fbbf24" if dscr >= 1.25 else ("#f97316" if dscr >= 1.0 else "#ef4444"))
-    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + dscr_color + "'>"
-    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>DSCR Regolamentare</h4>"
-    html += "<p style='font-size:3rem;font-weight:800;color:" + dscr_color + ";margin:0.5rem 0'>" + str(round(dscr, 2)) + "x</p>"
-    html += "<p style='color:var(--muted);font-size:0.9rem;margin:0.5rem 0'><strong>Stato:</strong> " + dscr_status + "</p>"
-    html += "<p style='color:var(--muted);font-size:0.85rem'>Basilea III / EBA. DSCR ≥ 1.25x = Accettabile | < 1.0x = Insolvente (le banche interrompono il credito)</p>"
-    html += "</div>"
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if gross_margin > 40 else "#fbbf24" if gross_margin > 25 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>3. Margine Operativo</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if gross_margin > 40 else "#fbbf24" if gross_margin > 25 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(gross_margin, 1)) + "%</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: >40% = Pricing Power | >25% = Buono</p></div>"
     
-    html += "</div>"
+    # Financial Strength
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if debt_equity < 0.5 else "#fbbf24" if debt_equity < 1.0 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>4. Debt/Equity</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if debt_equity < 0.5 else "#fbbf24" if debt_equity < 1.0 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(debt_equity, 2)) + "x</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: <0.5 = Conservativo | <1.0 = Accettabile</p></div>"
     
-    # Metriche operative aggiuntive
-    html += "<div style='display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:1rem;margin-bottom:2rem'>"
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if current_ratio > 1.5 else "#fbbf24" if current_ratio > 1.2 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>5. Current Ratio</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if current_ratio > 1.5 else "#fbbf24" if current_ratio > 1.2 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(current_ratio, 2)) + "x</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: >1.5 = Liquido | >1.2 = Sano</p></div>"
     
-    bp_color = "#10b981" if bp >= 40 else ("#fbbf24" if bp >= 20 else "#ef4444")
-    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;text-align:center;border-top:3px solid " + bp_color + "'>"
-    html += "<p style='color:var(--muted);font-size:0.8rem;text-transform:uppercase;margin:0 0 0.5rem 0'>Crollo sopportabile</p>"
-    html += "<p style='font-size:2.5rem;font-weight:800;color:" + bp_color + ";margin:0'>-" + str(int(bp)) + "%</p>"
-    html += "</div>"
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if interest_coverage > 5 else "#fbbf24" if interest_coverage > 3 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>6. Interest Coverage</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if interest_coverage > 5 else "#fbbf24" if interest_coverage > 3 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(interest_coverage, 1)) + "x</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: >5x = Tranquillo | >3x = Accettabile</p></div>"
     
-    runway_val = str(min(int(runway), 99)) if runway < 999 else "99+"
-    runway_color = "#10b981" if runway >= 12 else ("#fbbf24" if runway >= 6 else "#ef4444")
-    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;text-align:center;border-top:3px solid " + runway_color + "'>"
-    html += "<p style='color:var(--muted);font-size:0.8rem;text-transform:uppercase;margin:0 0 0.5rem 0'>Autonomia cassa</p>"
-    html += "<p style='font-size:2.5rem;font-weight:800;color:" + runway_color + ";margin:0'>" + runway_val + "<span style='font-size:1rem'> mesi</span></p>"
-    html += "</div>"
+    # Profitability & Valuation
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if fcf_yield > 5 else "#fbbf24" if fcf_yield > 3 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>7. FCF Yield</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if fcf_yield > 5 else "#fbbf24" if fcf_yield > 3 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(fcf_yield, 1)) + "%</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: >5% = Attraente | >3% = Buono</p></div>"
     
-    ic_color = "#10b981" if ic >= 3 else ("#fbbf24" if ic >= 1.5 else "#ef4444")
-    ic_display = str(round(ic, 1)) + "x" if ic < 999 else "N/D"
-    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;text-align:center;border-top:3px solid " + ic_color + "'>"
-    html += "<p style='color:var(--muted);font-size:0.8rem;text-transform:uppercase;margin:0 0 0.5rem 0'>Interest Coverage</p>"
-    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ic_color + ";margin:0'>" + ic_display + "</p>"
-    html += "</div>"
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if 0 < pe_ratio < 15 else "#fbbf24" if 0 < pe_ratio < 25 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>8. P/E Ratio</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if 0 < pe_ratio < 15 else "#fbbf24" if 0 < pe_ratio < 25 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(pe_ratio, 1)) + "x</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: <15x = Value | <25x = Accettabile</p></div>"
+    
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if 0 < pb_ratio < 1.5 else "#fbbf24" if 0 < pb_ratio < 3 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>9. P/B Ratio</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if 0 < pb_ratio < 1.5 else "#fbbf24" if 0 < pb_ratio < 3 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(pb_ratio, 2)) + "x</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: <1.5x = Sottovalutato | <3x = Accettabile</p></div>"
+    
+    html += "<div style='background:var(--bg);padding:1.5rem;border-radius:12px;border-left:4px solid " + ("#10b981" if upside > 30 else "#fbbf24" if upside > 10 else "#ef4444") + "'>"
+    html += "<h4 style='color:var(--gold);margin:0 0 0.5rem 0'>10. Upside Potenziale (DCF)</h4>"
+    html += "<p style='font-size:2.5rem;font-weight:800;color:" + ("#10b981" if upside > 30 else "#fbbf24" if upside > 10 else "#ef4444") + ";margin:0.5rem 0'>" + str(round(upside, 1)) + "%</p>"
+    html += "<p style='color:var(--muted);font-size:0.85rem'>Target: >30% = Forte Sconto | >10% = Attraente</p></div>"
     
     html += "</div>"
     
     # Dettagli tecnici
     html += "<details style='background:var(--bg);border-radius:12px;padding:1.5rem;margin-bottom:2rem'>"
-    html += "<summary style='cursor:pointer;color:var(--gold);font-weight:600;font-size:1rem'>Vedi dettagli tecnici e formule</summary>"
+    html += "<summary style='cursor:pointer;color:var(--gold);font-weight:600;font-size:1rem'>Vedi dettagli finanziari</summary>"
     html += "<div style='margin-top:1rem;padding-top:1rem;border-top:1px solid var(--line)'>"
     html += "<div style='display:grid;grid-template-columns:repeat(2, 1fr);gap:1rem;font-size:0.9rem'>"
-    html += "<div><strong style='color:var(--muted)'>Ricavi:</strong> " + str(round(s_rev, 1)) + " M€</div>"
-    html += "<div><strong style='color:var(--muted)'>EBIT:</strong> " + str(round(s_ebit, 1)) + " M€</div>"
-    html += "<div><strong style='color:var(--muted)'>EBITDA:</strong> " + str(round(s_ebitda, 1)) + " M€</div>"
-    html += "<div><strong style='color:var(--muted)'>Debito:</strong> " + str(round(s_debt, 1)) + " M€</div>"
-    html += "<div><strong style='color:var(--muted)'>Cassa:</strong> " + str(round(s_cash, 1)) + " M€</div>"
-    html += "<div><strong style='color:var(--muted)'>Tasso interesse:</strong> " + str(round(s_rate, 2)) + "%</div>"
-    html += "<div><strong style='color:var(--muted)'>Interessi annui:</strong> " + str(round(s_int, 2)) + " M€</div>"
-    html += "<div><strong style='color:var(--muted)'>Burn rate mensile:</strong> " + str(round(monthly_burn, 2)) + " M€</div>"
-    html += "</div>"
-    html += "<div style='margin-top:1rem;padding:1rem;background:rgba(0,0,0,0.2);border-radius:8px;font-size:0.85rem'>"
-    html += "<strong>Formule utilizzate:</strong><br>"
-    html += "• <strong>Altman Z-Score:</strong> 1.2(X₁) + 1.4(X₂) + 3.3(X₃) + 0.6(X₄) + 1.0(X₅) dove X₁=WC/TA, X₂=RE/TA, X₃=EBIT/TA, X₄=Eq/TL, X₅=Rev/TA<br>"
-    html += "• <strong>Ohlson O-Score:</strong> Regressione logistica con 9 variabili (dimensione, leva, liquidità, redditività)<br>"
-    html += "• <strong>DSCR:</strong> (EBITDA - Tasse - Capex Obbligatori) / (Rata Debito + Interessi) - Soglia Basilea III: ≥1.25x"
+    html += "<div><strong style='color:var(--muted)'>Ricavi:</strong> " + str(round(rev, 1)) + " M€</div>"
+    html += "<div><strong style='color:var(--muted)'>EBIT:</strong> " + str(round(ebit, 1)) + " M€</div>"
+    html += "<div><strong style='color:var(--muted)'>Utile Netto:</strong> " + str(round(net_income, 1)) + " M€</div>"
+    html += "<div><strong style='color:var(--muted)'>FCF:</strong> " + str(round(fcf, 1)) + " M€</div>"
+    html += "<div><strong style='color:var(--muted)'>Patrimonio Netto:</strong> " + str(round(equity, 1)) + " M€</div>"
+    html += "<div><strong style='color:var(--muted)'>Debito Totale:</strong> " + str(round(total_liabilities, 1)) + " M€</div>"
+    html += "<div><strong style='color:var(--muted)'>EPS:</strong> " + str(round(eps, 2)) + " €</div>"
+    html += "<div><strong style='color:var(--muted)'>Book Value:</strong> " + str(round(book_value, 2)) + " €</div>"
     html += "</div></div></details>"
     
     # Azioni
@@ -1631,11 +1584,9 @@ def simula():
     html += "<a href='/analysis/" + str(rep.id) + "' class='btn2' style='background:var(--blue)'>Analisi completa</a>"
     html += "<a href='/analyze' class='btn2' style='background:var(--teal)'>Analizza altro bilancio</a>"
     html += "<a href='/cronologia' class='btn2' style='background:var(--gold);color:#0b1220'>Vedi cronologia</a>"
-    html += "</div>"
+    html += "</div></div>"
     
-    html += "</div>"
-    
-    return render_template_string(BASE_TEMPLATE, title="Test di Sopravvivenza", content=html)
+    return render_template_string(BASE_TEMPLATE, title="Buffett Analyzer", content=html)
 
 @app.route("/account", methods=["GET", "POST"])
 @login_required
