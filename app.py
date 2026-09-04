@@ -1273,43 +1273,90 @@ def analyze():
 @app.route("/do_analyze", methods=["POST"])
 @login_required
 def do_analyze():
-    if 'file' not in request.files:
-        flash("⚠️ Nessun file selezionato. Clicca su 'Seleziona File' e scegli un PDF.", "warning")
-        return redirect("/analyze")
+    start_time = time.time()
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.info("Inizio analisi PDF per user: " + str(current_user.id))
     
-    file = request.files['file']
-    if file.filename == '':
-        flash("⚠️ Nessun file selezionato. Clicca su 'Seleziona File' e scegli un PDF.", "warning")
-        return redirect("/analyze")
-    
-    if file and file.filename.endswith('.pdf'):
+    try:
+        if 'file' not in request.files:
+            flash("⚠️ Nessun file caricato. Clicca su 'Seleziona File' e scegli un PDF.", "warning")
+            logger.warning("Nessun file nel request.files")
+            return redirect("/analyze")
+        
+        file = request.files['file']
+        if file.filename == '':
+            flash("️ Nessun file selezionato.", "warning")
+            return redirect("/analyze")
+        
+        if not file.filename.lower().endswith('.pdf'):
+            flash("❌ Formato file non valido. Carica solo file PDF.", "error")
+            return redirect("/analyze")
+        
+        logger.info(f"File ricevuto: {file.filename}, size: {len(file.read())} bytes")
+        file.seek(0)  # Resetta il puntatore
+        
+        # Estrazione testo con timeout
         try:
-            # Estrazione testo
             pdf_reader = PyPDF2.PdfReader(file)
             text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text()
+            num_pages = len(pdf_reader.pages)
+            logger.info(f"PDF caricato: {num_pages} pagine")
             
-            # Estrazione dati con pattern matching avanzato
-            extracted = extract_financial_data(text, file.filename)
+            for i, page in enumerate(pdf_reader.pages):
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text += page_text
+                    logger.info(f"Pagina {i+1}/{num_pages} estratta")
+                except Exception as e:
+                    logger.warning(f"Errore estrazione pagina {i}: {str(e)}")
+                    continue
             
-            # VALIDAZIONE RIGOROSA - Solo dati reali
-            required_fields = ["revenue", "ebit", "total_debt", "cassa"]
-            missing_fields = [f for f in required_fields if not extracted.get(f)]
-            
-            if len(missing_fields) > 2:
-                # Troppi dati mancanti, non creare report
-                flash(f"Dati insufficienti nel PDF. Mancano: {', '.join(missing_fields)}. Carica un bilancio completo.", "error")
+            if len(text) < 100:
+                flash("⚠️ Il PDF sembra vuoto o protetto. Assicurati che sia un bilancio leggibile.", "warning")
+                logger.error("Testo estratto troppo corto: " + str(len(text)) + " caratteri")
                 return redirect("/analyze")
             
-            # Calcolo score base
-            score = calculate_score(extracted)
+            logger.info(f"Testo estratto: {len(text)} caratteri")
             
-            # Salva report SOLO con dati reali
+        except Exception as e:
+            flash(f"❌ Errore nella lettura del PDF: {str(e)}", "error")
+            logger.error(f"Errore PyPDF2: {str(e)}")
+            return redirect("/analyze")
+        
+        # Estrazione dati
+        try:
+            extracted = extract_financial_data(text, file.filename)
+            logger.info(f"Dati estratti: {extracted}")
+        except Exception as e:
+            flash(f" Errore nell'estrazione dati: {str(e)}", "error")
+            logger.error(f"Errore extract_financial_data: {str(e)}")
+            return redirect("/analyze")
+        
+        # Validazione dati
+        required_fields = ["revenue", "ebit", "total_debt", "cassa"]
+        missing_fields = [f for f in required_fields if not extracted.get(f)]
+        
+        if len(missing_fields) > 2:
+            flash(f"️ Dati insufficienti nel PDF. Mancano: {', '.join(missing_fields)}. Carica un bilancio completo con Stato Patrimoniale e Conto Economico.", "warning")
+            logger.warning(f"Dati mancanti: {missing_fields}")
+            return redirect("/analyze")
+        
+        # Calcolo score
+        try:
+            score = calculate_score(extracted)
+        except Exception as e:
+            logger.error(f"Errore calculate_score: {str(e)}")
+            score = 0
+        
+        # Salva report
+        try:
             rep = Report(
                 user_id=current_user.id,
                 filename=file.filename,
-                company=extracted.get("company_name", file.filename.replace('.pdf', '')),
+                company=extracted.get("company_name", file.filename.replace('.pdf', '').replace('-', ' ').replace('_', ' ').strip().title()),
                 metrics_json=_json.dumps(extracted),
                 score=score,
                 sector=extracted.get("sector", ""),
@@ -1318,202 +1365,22 @@ def do_analyze():
             db.session.add(rep)
             db.session.commit()
             
-            flash(f"Analisi completata! Report salvato. Dati estratti: {len([k for k, v in extracted.items() if v])}/{len(extracted)}", "success")
+            elapsed = time.time() - start_time
+            logger.info(f"Report salvato con ID {rep.id} in {elapsed:.2f} secondi")
+            
+            flash(f"✅ Analisi completata in {elapsed:.1f}s! Report salvato. Dati estratti: {len([k for k, v in extracted.items() if v])}/{len(extracted)}", "success")
             return redirect(f"/report/{rep.id}")
             
         except Exception as e:
-            flash(f"Errore nell'analisi: {str(e)}", "error")
+            db.session.rollback()
+            flash(f"❌ Errore nel salvataggio del report: {str(e)}", "error")
+            logger.error(f"Errore salvataggio DB: {str(e)}")
             return redirect("/analyze")
-    
-    flash("Formato file non valido. Carica un PDF.", "error")
-    return redirect("/analyze")
-
-def extract_financial_data(text, filename):
-    import re
-    
-    data = {}
-    text_lower = text.lower()
-    
-    # Company name (dal filename o dal testo)
-    data["company_name"] = filename.replace('.pdf', '').replace('-', ' ').replace('_', ' ').strip().title()
-    
-    # Revenue (Ricavi/Vendite/Fatturato)
-    revenue_patterns = [
-        r'ricavi\s*(?:netti)?\s*(?:delle\s*vendite)?\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'fatturato\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'vendite\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'revenue\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?'
-    ]
-    data["revenue"] = extract_number(text, revenue_patterns, multipliers={"mld": 1000, "billion": 1000, "milioni": 1, "million": 1, "mila": 0.001})
-    
-    # EBIT
-    ebit_patterns = [
-        r'ebit\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'risultato\s*operativo\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'utile\s*(?:prima\s*)?(?:delle\s*)?(?:imposte\s*e\s*)?interessi\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?'
-    ]
-    data["ebit"] = extract_number(text, ebit_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # EBITDA
-    ebitda_patterns = [
-        r'ebitda\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'margine\s*operativo\s*lordo\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?'
-    ]
-    data["ebitda"] = extract_number(text, ebitda_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Total Debt (Debito finanziario totale)
-    debt_patterns = [
-        r'debito\s*(?:finanziario\s*)?(?:netto|lordo)?\s*(?:totale)?\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'total\s*debt\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?',
-        r'passivit[aà]\s*finanziarie\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?'
-    ]
-    data["total_debt"] = extract_number(text, debt_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Cash (Cassa/Liquidità)
-    cash_patterns = [
-        r'cassa\s*(?:e\s*equivalenti)?\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'liquidit[aà]\s*(?:immediata|disponibile)?\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'cash\s*(?:and\s*cash\s*equivalents)?\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?'
-    ]
-    data["cassa"] = extract_number(text, cash_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Interest (Interessi passivi)
-    interest_patterns = [
-        r'interessi\s*(?:passivi)?\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'onere?\s*finanziari?\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'interest\s*expense\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?'
-    ]
-    data["interest"] = extract_number(text, interest_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Net Income (Utile netto)
-    net_income_patterns = [
-        r'utile\s*(?:netto)?\s*(?:dell)?\s*(?:esercizio)?\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'net\s*income\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?',
-        r'profitto\s*netto\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?'
-    ]
-    data["net_income"] = extract_number(text, net_income_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Total Assets
-    assets_patterns = [
-        r'totale\s*attivo\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'total\s*assets\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?',
-        r'attivit[aà]\s*totali\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?'
-    ]
-    data["total_assets"] = extract_number(text, assets_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Total Liabilities
-    liabilities_patterns = [
-        r'totale\s*passivit[aà]\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'total\s*liabilities\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?',
-        r'passivit[aà]\s*totali\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?'
-    ]
-    data["total_liabilities"] = extract_number(text, liabilities_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Working Capital
-    wc_patterns = [
-        r'capitale\s*circolante\s*netto\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'working\s*capital\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?'
-    ]
-    data["working_capital"] = extract_number(text, wc_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Current Assets
-    ca_patterns = [
-        r'attivit[aà]\s*correnti\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'current\s*assets\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?'
-    ]
-    data["current_assets"] = extract_number(text, ca_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Current Liabilities
-    cl_patterns = [
-        r'passivit[aà]\s*correnti\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'current\s*liabilities\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?'
-    ]
-    data["current_liabilities"] = extract_number(text, cl_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Capex
-    capex_patterns = [
-        r'capex\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'investimenti\s*(?:in\s*immobilizzazioni)?\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'capital\s*expenditure\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?'
-    ]
-    data["capex"] = extract_number(text, capex_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Depreciation
-    dep_patterns = [
-        r'ammortamenti\s*[:\-]?\s*€?\s*([\d,]+\.?\d*)\s*(?:milioni|mila|mld)?',
-        r'depreciation\s*[:\-]?\s*€?\s*\$?\s*([\d,]+\.?\d*)\s*(?:million|billion)?'
-    ]
-    data["depreciation"] = extract_number(text, dep_patterns, multipliers={"mld": 1000, "milioni": 1, "mila": 0.001})
-    
-    # Sector (rilevamento automatico)
-    if any(word in text_lower for word in ["bank", "banca", "credito", "finanziario"]):
-        data["sector"] = "Finance"
-    elif any(word in text_lower for word in ["tech", "tecnologia", "software", "informatica"]):
-        data["sector"] = "Tech"
-    elif any(word in text_lower for word in ["manufacturing", "manifatturiero", "industriale"]):
-        data["sector"] = "Manufacturing"
-    elif any(word in text_lower for word in ["retail", "commercio", "distribuzione"]):
-        data["sector"] = "Retail"
-    else:
-        data["sector"] = "Altro"
-    
-    # Confidence score per ogni dato
-    data["extraction_confidence"] = {}
-    for key in ["revenue", "ebit", "ebitda", "total_debt", "cassa", "interest", "net_income", "total_assets", "total_liabilities"]:
-        data["extraction_confidence"][key] = "high" if data.get(key) else "missing"
-    
-    return data
-
-def extract_number(text, patterns, multipliers):
-    import re
-    text_lower = text.lower()
-    
-    for pattern in patterns:
-        match = re.search(pattern, text_lower, re.IGNORECASE)
-        if match:
-            number_str = match.group(1).replace(',', '').replace('.', '').replace(' ', '')
-            try:
-                number = float(number_str)
-                # Applica moltiplicatore
-                for mult_str, mult_val in multipliers.items():
-                    if mult_str in text_lower[max(0, match.start()-50):match.end()+50]:
-                        number *= mult_val
-                        break
-                return round(number, 2)
-            except:
-                continue
-    return None
-
-def calculate_score(data):
-    # Score basato solo su dati reali presenti
-    if not data.get("revenue") or not data.get("ebit"):
-        return 0
-    
-    score = 50  # Base
-    
-    # Profitability
-    if data.get("ebit") and data.get("revenue"):
-        margin = (data["ebit"] / data["revenue"]) * 100
-        if margin > 15: score += 20
-        elif margin > 8: score += 10
-        elif margin > 0: score += 5
-    
-    # Leverage
-    if data.get("total_debt") and data.get("revenue"):
-        debt_rev = data["total_debt"] / data["revenue"]
-        if debt_rev < 1: score += 15
-        elif debt_rev < 2: score += 10
-        elif debt_rev < 3: score += 5
-        else: score -= 10
-    
-    # Liquidity
-    if data.get("cassa") and data.get("total_debt"):
-        cash_debt = data["cassa"] / data["total_debt"] if data["total_debt"] > 0 else 0
-        if cash_debt > 0.5: score += 15
-        elif cash_debt > 0.2: score += 10
-        elif cash_debt > 0.1: score += 5
-    
-    return min(max(score, 0), 100)
+        
+    except Exception as e:
+        flash(f"❌ Errore imprevisto nell'analisi: {str(e)}", "error")
+        logger.error(f"Errore generico: {str(e)}")
+        return redirect("/analyze")
 
 @app.route("/reports")
 @login_required
